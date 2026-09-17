@@ -1,26 +1,19 @@
 import { chromium } from 'playwright';
 import { login } from './login.js';
+import { scrapeGridRows } from './grid.js';
 
 /**
- * Logs in, scrapes inspections that still need scheduling, and prints them
- * as JSON on stdout (one array) so n8n's Execute Command node can pipe the
- * output straight into a Google Sheets "append/update" node.
- *
- * TODO: the selectors below are placeholders. Run `npm run explore` first
- * (see scraper/recon/ once it exists) to see the real inspections list
- * markup, then replace the selector logic in scrapeInspections().
+ * Logs in, scrapes the "My Inspections" grid, and prints inspections that
+ * still need scheduling as a JSON array on stdout — n8n's Execute Command
+ * node pipes this straight into the Google Sheets node.
  */
-async function scrapeInspections(page) {
-  throw new Error(
-    'scrapeInspections() not implemented yet — run `npm run explore` against ' +
-    'a real login first and use scraper/recon/*.html to find the real table/list markup.'
-  );
-}
-
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 await login(page);
-const inspections = await scrapeInspections(page);
+await page.goto('https://preferred.losscontrol360.com/pages/Inspectors/', { waitUntil: 'networkidle' });
+
+const rows = await scrapeGridRows(page);
 await browser.close();
 
-process.stdout.write(JSON.stringify(inspections, null, 2));
+const needsScheduling = rows.filter((r) => r.RequiresScheduling);
+process.stdout.write(JSON.stringify(needsScheduling, null, 2));
