@@ -5,64 +5,87 @@ Automates the busywork around scheduling inspection appointments in
 only manual work left is the actual human judgment call: whether/when to
 schedule, and what to note about the contact attempt.
 
-## Data flow
+**Status: live in production as of 2026-09-17.** Both n8n workflows below are
+active/verified against real cases.
+
+## Architecture
+
+The production system runs entirely in n8n (`http://192.168.1.74:5678`) as
+two workflows, both using plain HTTP nodes against LC360's real endpoints
+rather than browser automation — much lighter than the original
+Playwright-based plan.
 
 ```
-n8n (scheduled trigger, e.g. daily)
-  └─▶ scraper/src/pull.js  (Playwright, logs into LC360)
-        └─▶ scrapes inspections still needing scheduling
-              └─▶ n8n writes/updates rows in the Google Sheet
+n8n: "LC360 → Google Sheet (Inspection Export)"  (id cG2WVIbQkPAfBvWW, active, every 2h)
+  └─▶ logs into LC360 (HTTP, cookie/anti-forgery-token flow)
+  └─▶ POST /WebServices/LandingPage.asmx/GetCases  (official ASMX JSON endpoint, ~40 fields)
+  └─▶ upserts rows into the Google Sheet, matched by CaseID
+        (never touches the human-edit columns — safe to re-run anytime)
                                                             │
-                                      Enrique edits rows: Schedule? / Date /
-                                      Time / Attempted to Contact / Comments
+                              Enrique fills in: Schedule Appointment (Y/N),
+                              Date, Time, Attempted to Contact, Comments,
+                              then sets Sync Status = "Ready to Sync"
                                                             │
-n8n (trigger: edited row, e.g. "Sync Status" column flipped to "Ready")
-  └─▶ scraper/src/push.js  (Playwright, logs into LC360)
-        └─▶ writes the scheduling fields back into the report, saves
-  └─▶ HTTP Request node → Zoho Calendar API
-        └─▶ creates the appointment event
-  └─▶ marks the row "Synced" in the Sheet
+n8n: "LC360 Scheduling Sync (Phase 2)"  (id BNHnE6trqQk079eo, manual trigger)
+  └─▶ reads the sheet, filters to Sync Status == "Ready to Sync"
+  └─▶ resolves "Attempted to Contact" against that case's real contact types
+  └─▶ POST /api/CaseScheduling/AddScheduleItem  (writes to LC360's Scheduling
+        Summary Info — never the general Case Notes log, see below)
+  └─▶ if Y: refreshes a Zoho token and POSTs a Zoho Calendar event
+  └─▶ writes back Sync Status = "Synced" or "Error: <reason>" + Last Synced
 ```
 
-Google Sheet (created 2026-09-17): [CMA Scheduling — Loss Control 360 Inspections](https://docs.google.com/spreadsheets/d/1xZjQLFA8tnKFtHp6xw3Cf4hcFFmksXPnQc1mW-UtGx4/edit)
-Columns: `Inspection ID, Insured/Property, Address, Status, Portal Link, Schedule Appointment? (Y/N), Date, Time, Attempted to Contact, Comments, Sync Status, Last Synced`.
+Google Sheet: [Inspections](https://docs.google.com/spreadsheets/d/1XDgnaqlHMRFGeiBzm7fnrjM9-sZXan7rRhG2pOqVkF0/edit)
+(owned by `inspections@cmainspections.com`), tab "Inspections". Columns are
+the ~40 LC360 fields plus `Case Link`, `Last Synced`, and the human-edit
+columns: `Schedule Appointment (Y/N)`, `Date`, `Time`, `Attempted to Contact`,
+`Comments`, `Sync Status`.
 
-## Repo layout
+**To schedule an appointment:** fill in those 6 columns for a row (Date as
+`MM/DD/YYYY`, Time as e.g. `4:00 PM`, Attempted to Contact must exactly match
+one of that case's valid contact types — usually `Insured`, `Agent`, or
+`Other`), then set `Sync Status` to exactly `Ready to Sync`. Run the "LC360
+Scheduling Sync (Phase 2)" workflow (currently manual — see Open Items).
 
-- `scraper/` — Node.js + Playwright. `src/login.js` (working, verified against
-  the real login form), `src/explore.js` (recon script — run once with real
-  credentials to capture the authenticated site's markup), `src/pull.js` /
-  `src/push.js` (stubs — selectors pending recon output).
-- `n8n-workflow/` — the n8n workflow definition, once built (export from the
-  n8n UI at `http://192.168.1.74:5678`).
-- `docs/` — decisions and setup notes.
+## Why two n8n workflows instead of the original Playwright plan
 
-## Status (2026-09-17)
+The original plan (see `scraper/`) was a Node.js + Playwright scraper driven
+by n8n's Execute Command node. While building it, an existing, more advanced
+n8n workflow was discovered already doing the LC360 login + an official ASMX
+JSON endpoint (no HTML scraping needed) — that became the foundation instead.
+`scraper/` is kept as a reference: `login.js`/`grid.js`/`push.js` were used to
+discover and verify LC360's real API contracts (the Kendo grid's
+`RequiresScheduling` class, the `/api/CaseScheduling/*` endpoints, the ASMX
+`GetCases` endpoint) before porting the same logic into n8n nodes.
 
-| Piece | Status |
-|---|---|
-| Login automation | Done — confirmed against the real login form (ASP.NET MVC, posts to `/Login/Login`, fields `#UserName`/`#Password`, no 2FA/CAPTCHA). |
-| Inspections list scrape | **Blocked** — needs real credentials to run `npm run explore` and see the authenticated page markup. |
-| Report edit/save | **Blocked** — same; also needs to know which fields on the LC360 side correspond to "schedule appointment/date/time/attempted to contact/comments". |
-| Google Sheet | Done — created with header row (link above). n8n still needs a Google Sheets credential connected to read/write it. |
-| Zoho Calendar event creation | **Blocked** — needs a Zoho API Console OAuth client (Calendar scope). The Zoho *Mail* app password already in use elsewhere in this environment does not cover Calendar. |
-| n8n workflow | Not built yet — waiting on the above so the nodes have real data to wire against. |
+## Known limitations / open items
 
-## What's needed to unblock
+- **Phase 2 is manual-trigger only.** Decide whether to add a schedule
+  trigger so it runs automatically instead of clicking "Execute workflow"
+  after marking rows ready.
+- **Secrets live in plaintext inside two n8n Code/HTTP nodes** (the LC360
+  login credentials, and a Zoho OAuth client id/secret/refresh token) rather
+  than n8n's credential vault. This was a deliberate, discussed tradeoff:
+  n8n's public API can't create credentials, `$credentials` doesn't resolve
+  in HTTP node expressions on this n8n version, and enabling `$env` access
+  for Code nodes is an instance-wide security flag, not a scoped fix. Do not
+  export/share these two workflows without stripping those values first.
+- **No delete path for LC360 schedule-history entries.** Only actual
+  appointments can be cancelled (`/api/CaseScheduling/CancelAppointment`);
+  logged "attempted to contact" entries are permanent. Test carefully.
+- The Zoho Calendar step uses the same manual refresh-token pattern as the
+  pre-existing "CMA Cust Appt Reminder" workflow (calendar
+  `8a7a896edb0f41649892a96d48ab70a3`, owned by `inspections@cmainspections.com`,
+  shared with "Manage" permission to the token's account) rather than n8n's
+  native `zohoOAuth2Api` credential type, which turned out to have no
+  Client ID/Secret configured and was left unfixed as lower priority.
 
-1. **LC360 login** — put real values in `scraper/.env` (copy from
-   `.env.example`; this file is git-ignored). Don't paste credentials into
-   chat/agent conversations — drop them straight into the file on
-   `192.168.1.74` under `/opt/workspace/projects/cma-scheduling-claude/scraper/.env`.
-2. **Google Sheets access for n8n** — in the n8n editor (`http://192.168.1.74:5678`),
-   add a Google Sheets credential (Credentials → New → Google Sheets OAuth2
-   API) and sign in with the Google account that should own the sheet.
-3. **Zoho Calendar OAuth client** — register a "Self Client" or
-   "Server-based Application" at `api-console.zoho.com` with the
-   `ZohoCalendar.calendar.ALL` scope, then add it to n8n as a generic OAuth2
-   API credential pointed at Zoho's auth/token endpoints. Happy to walk
-   through this step by step once you're ready.
+## Repo layout (reference/dev tooling, not the production path)
 
-Once (1) is available, run `cd scraper && npm install && npm run explore` —
-that logs in, saves the authenticated pages to `scraper/recon/` (git-ignored),
-and from there the real selectors go into `pull.js`/`push.js`.
+- `scraper/` — Node.js + Playwright. Used to discover and verify LC360's site
+  structure and API contracts before porting the logic into n8n. `.env` here
+  holds LC360 credentials for re-running discovery if the site changes
+  (git-ignored).
+- `n8n-workflow/` — exported copies of the relevant n8n workflows for
+  reference, plus `.env` for the n8n API key used to manage them via the API
+  (both git-ignored — these exports contain live secrets).

@@ -3,3 +3,4 @@ node_modules/
 *.log
 scraper/downloads/
 scraper/recon/
+n8n-workflow/existing-*.json
