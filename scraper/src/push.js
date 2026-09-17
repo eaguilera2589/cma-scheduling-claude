@@ -8,7 +8,8 @@ const BASE = 'https://preferred.losscontrol360.com';
  * same JSON API the case-detail page's "Attempted to Contact / Schedule an
  * Appointment" widget calls (confirmed live 2026-09-17 by reading the page's
  * own JS — see scraper/recon/03-case-detail.html around the #btnSchedule
- * click handler).
+ * click handler). This writes only to the case's Scheduling Summary Info —
+ * never touch the separate general Case Notes log/API for this workflow.
  *
  * record shape (one row from the Google Sheet, after Enrique edits it):
  *   {
