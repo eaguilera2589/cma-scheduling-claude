@@ -39,7 +39,7 @@ const HIDE_COLUMNS = [
   'PolicyNumber', 'CaseID', 'PolicyContactName', 'Underwriter', 'FieldRep',
   'PayAmount', 'TotalRecs', 'OpenCriticalRecs', 'InsuredWorkPhone',
   'LocationCounty', 'Ordered', 'PlannedFor', 'LastCalledOn',
-  'LastContactAttemptName', 'DateLastContactAttempt', 'CaseLink', 'LastSynced',
+  'LastContactAttemptName', 'DateLastContactAttempt', 'Case Link', 'Last Synced',
 ];
 
 // Columns used by conditional-format formulas (must exist).
@@ -214,21 +214,34 @@ async function main() {
   });
   const dataRows = (endCol) => ({ ...allRows(endCol), startRowIndex: 1 });
 
-  // --- Step 1: clear existing conditional formats over the data -------------
-  // Separate call so a "nothing to delete" error on a pristine sheet is
-  // tolerated and does not abort the rest of the work.
+  // --- Step 1: clear existing conditional formats on the main tab -----------
+  // deleteConditionalFormatRule addresses rules by index, so count the main
+  // tab's existing rules first and delete that many (index 0 each time, since
+  // each delete shifts the rest down). All main-tab rules are script-owned,
+  // so removing them all and re-adding below keeps re-runs idempotent.
+  // A delete failure is fatal: continuing would re-add our rules on top of the old ones.
   try {
-    await sheets.spreadsheets.batchUpdate({
+    const cfMeta = await sheets.spreadsheets.get({
       spreadsheetId: SPREADSHEET_ID,
-      requestBody: {
-        requests: [
-          { deleteConditionalFormatRule: { sheetId: mainId, range: allRows(finalCols) } },
-        ],
-      },
+      fields: 'sheets.properties.sheetId,sheets.conditionalFormats',
     });
-    log('Cleared pre-existing conditional format rules.');
+    const mainSheet = cfMeta.data.sheets.find((s) => s.properties.sheetId === mainId);
+    const ruleCount = (mainSheet?.conditionalFormats || []).length;
+    if (ruleCount > 0) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          requests: Array.from({ length: ruleCount }, () => ({
+            deleteConditionalFormatRule: { sheetId: mainId, index: 0 },
+          })),
+        },
+      });
+      log(`Cleared ${ruleCount} pre-existing conditional format rule(s).`);
+    } else {
+      log('No pre-existing conditional formats to clear.');
+    }
   } catch (err) {
-    log(`No pre-existing conditional formats to clear (${err?.response?.status || err?.message}).`);
+    die(err);
   }
 
   // --- Step 2: write the Days Until Due column ------------------------------
@@ -236,6 +249,23 @@ async function main() {
   // row's formula must carry its own row number (relative refs do NOT shift).
   const formulaForRow = (r) => `=IF($${dueL}${r}="","",$${dueL}${r}-TODAY())`;
   if (addingDaysCol) {
+    // values.update does not grow the grid; expand the column count first so
+    // the new header cell (and later ranges through daysIdx) are addressable.
+    const currentCols = mainProps.gridProperties?.columnCount || 0;
+    if (daysIdx + 1 > currentCols) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          requests: [{
+            updateSheetProperties: {
+              properties: { sheetId: mainId, gridProperties: { columnCount: daysIdx + 1 } },
+              fields: 'gridProperties.columnCount',
+            },
+          }],
+        },
+      });
+      log(`Grew "${MAIN_TAB}" grid columns ${currentCols} -> ${daysIdx + 1}.`);
+    }
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${quoteTitle(MAIN_TAB)}!${daysL}1`,
@@ -305,13 +335,12 @@ async function main() {
     // 1. Freeze the header row.
     {
       updateSheetProperties: {
-        sheetId: mainId,
-        properties: { gridProperties: { frozenRowCount: 1 } },
+        properties: { sheetId: mainId, gridProperties: { frozenRowCount: 1 } },
         fields: 'gridProperties.frozenRowCount',
       },
     },
     // 4. Conditional formatting (delete happened in its own batch above).
-    ...cfRules.map((rule) => ({ updateConditionalFormat: { sheetId: mainId, rule } })),
+    ...cfRules.map((rule) => ({ addConditionalFormatRule: { rule } })),
     // 2. Basic filter over header + data.
     { setBasicFilter: { filter: { range: allRows(finalCols) } } },
     // 3. Hide low-value columns.
@@ -320,8 +349,8 @@ async function main() {
       return {
         updateDimensionProperties: {
           range: { sheetId: mainId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 },
-          properties: { hidden: true },
-          fields: 'hidden',
+          properties: { hiddenByUser: true },
+          fields: 'hiddenByUser',
         },
       };
     }),
@@ -335,7 +364,7 @@ async function main() {
           startColumnIndex: colOf(name),
           endColumnIndex: colOf(name) + 1,
         },
-        data: {
+        rule: {
           condition: {
             type: 'ONE_OF_LIST',
             values: options.map((v) => ({ userEnteredValue: v })),
@@ -383,7 +412,7 @@ async function main() {
       },
     });
     res.data.replies.forEach((r, i) => {
-      sheetProps.set(toCreate[i], { sheetId: r.addSheet.sheetId, title: toCreate[i] });
+      sheetProps.set(toCreate[i], r.addSheet.properties);
       log(`Created tab "${toCreate[i]}".`);
     });
   } else {
@@ -402,6 +431,23 @@ async function main() {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [[query]] },
     });
+    // A freshly addedSheet tab is only 26 cols wide; grow it so the bold
+    // header update below can address every QUERY output column.
+    const tabProps = sheetProps.get(title);
+    const tabCols = tabProps.gridProperties?.columnCount || 0;
+    if (finalCols > tabCols) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          requests: [{
+            updateSheetProperties: {
+              properties: { sheetId: tabProps.sheetId, gridProperties: { columnCount: finalCols } },
+              fields: 'gridProperties.columnCount',
+            },
+          }],
+        },
+      });
+    }
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
@@ -415,8 +461,12 @@ async function main() {
                 startColumnIndex: 0,
                 endColumnIndex: finalCols,
               },
-              cell: { textFormat: { bold: true } },
-              fields: 'textFormat.bold',
+              rows: [{
+                values: Array.from({ length: finalCols }, () => ({
+                  userEnteredFormat: { textFormat: { bold: true } },
+                })),
+              }],
+              fields: 'userEnteredFormat.textFormat.bold',
             },
           },
         ],
