@@ -1,0 +1,16 @@
+{
+  "name": "cma-scheduling-format-sheet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "One-shot formatter for the CMA Inspections Google Sheet (freeze header, filter, hide noise columns, conditional formatting, dropdowns, Days Until Due, Needs Scheduling / Scheduled tabs).",
+  "main": "format-sheet.js",
+  "scripts": {
+    "start": "node format-sheet.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "googleapis": "^183.0.0"
+  }
+}
