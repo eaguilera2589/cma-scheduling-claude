@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'CMA Scheduling',
-  description: 'Read-only scheduling view for CMA inspections (backed by the Inspections sheet).',
+  description: 'Scheduling interface for CMA inspections (backed by the Inspections sheet).',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -15,7 +15,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <div className="mx-auto flex max-w-6xl items-center px-4 py-3">
             <span className="text-lg font-semibold tracking-tight">CMA Scheduling</span>
             <span className="ml-2 hidden rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500 sm:inline">
-              read-only
+              read &amp; write
             </span>
           </div>
         </header>

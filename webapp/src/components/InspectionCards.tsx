@@ -1,12 +1,15 @@
 import type { Inspection } from '@/lib/types';
 import DueDate from './DueDate';
 import FlagBadge from './FlagBadge';
+import SyncStatusPill from './SyncStatusPill';
 import { rowFlags } from './flags';
 
 interface Props {
   rows: Inspection[];
   /** "scheduled" also shows the scheduled-for date on each card. */
   mode: 'needs' | 'scheduled';
+  /** Opens the row editor (requires a row with a CaseNumber). */
+  onEdit: (caseNumber: string) => void;
 }
 
 function cityState(row: Inspection): string {
@@ -14,7 +17,7 @@ function cityState(row: Inspection): string {
 }
 
 /** Stacked card view for small screens (hidden at the `md` breakpoint and up). */
-export default function InspectionCards({ rows, mode }: Props) {
+export default function InspectionCards({ rows, mode, onEdit }: Props) {
   return (
     <ul className="space-y-3 md:hidden">
       {rows.map((row, i) => (
@@ -43,6 +46,17 @@ export default function InspectionCards({ rows, mode }: Props) {
                 Scheduled <span className="font-medium text-slate-700">{row.dateScheduledFor}</span>
               </span>
             )}
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+            <SyncStatusPill status={row.syncStatus} />
+            <button
+              type="button"
+              onClick={() => onEdit(row.caseNumber)}
+              disabled={!row.caseNumber}
+              className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+            >
+              Edit
+            </button>
           </div>
         </li>
       ))}

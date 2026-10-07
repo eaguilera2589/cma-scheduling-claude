@@ -8,7 +8,9 @@ actual human judgment call: whether/when to schedule, and what to note about
 the contact attempt.
 
 **Status: live in production.** Pull side (both portals) and Phase 2 push
-(Preferred only, see Open Items) are active/verified against real cases.
+(both portals since 2026-10-06 — `Route by Portal` branches on the `Portal`
+column; webhook trigger added alongside the manual trigger) are
+active/verified against real cases.
 
 ## Architecture
 
@@ -35,16 +37,24 @@ n8n: "LC360 → Google Sheet (Inspection Export)"  (id cG2WVIbQkPAfBvWW, active,
              downstream automations (see `cma-automated-field-emails`) don't
              depend on a sheet humans are actively editing
                                                             │
-                              Enrique fills in: Schedule Appointment (Y/N),
-                              Date, Time, Attempted to Contact, Comments,
-                              then sets Sync Status = "Ready to Sync"
+                               Enrique edits via the webapp (Schedule
+                               Appointment Y/N, Date, Time, Attempted to
+                               Contact, Comments; then Sync Status =
+                               "Ready to Sync") — or edits the sheet directly
                                                             │
-n8n: "LC360 Scheduling Sync (Phase 2)"  (id BNHnE6trqQk079eo, manual trigger)
+                                                            │  webapp "Sync now" → POST /webhook/lc360-sync
+                                                            ▼
+n8n: "LC360 Scheduling Sync (Phase 2)"  (id BNHnE6trqQk079eo; webhook trigger
+  OR manual "Execute workflow")
   └─▶ reads the sheet, filters to Sync Status == "Ready to Sync"
   └─▶ resolves "Attempted to Contact" against that case's real contact types
-  └─▶ POST /api/CaseScheduling/AddScheduleItem  (writes to LC360's Scheduling
-        Summary Info — never the general Case Notes log, see below)
-  └─▶ if Y: refreshes a Zoho token and POSTs a Zoho Calendar event
+  └─▶ Route by Portal →
+        ├─▶ Sutton rows: log into ecommerce3.sibfla.com, resolve the LC360
+        │     UserId at runtime, POST /api/CaseScheduling/AddScheduleItem
+        └─▶ Preferred rows: same AddScheduleItem POST against
+              preferred.losscontrol360.com
+  └─▶ both branches rejoin: if Y, refreshes a Zoho token and POSTs a Zoho
+        Calendar event (same calendar for both portals)
   └─▶ writes back Sync Status = "Synced" or "Error: <reason>" + Last Synced
 ```
 
@@ -66,8 +76,11 @@ the human-facing sheet.
 **To schedule an appointment:** fill in those 6 columns for a row (Date as
 `MM/DD/YYYY`, Time as e.g. `4:00 PM`, Attempted to Contact must exactly match
 one of that case's valid contact types — usually `Insured`, `Agent`, or
-`Other`), then set `Sync Status` to exactly `Ready to Sync`. Run the "LC360
-Scheduling Sync (Phase 2)" workflow (currently manual — see Open Items).
+`Other`), then set `Sync Status` to exactly `Ready to Sync`. The webapp's
+**Sync now** button triggers the "LC360 Scheduling Sync (Phase 2)" workflow
+via its webhook (`POST /webhook/lc360-sync`, `x-sync-secret` header) and the
+run executes in the background; the webhook acknowledges immediately. The
+manual "Execute workflow" trigger remains available as a fallback.
 
 ## Why two n8n workflows instead of the original Playwright plan
 
@@ -120,15 +133,24 @@ discover and verify LC360's real API contracts (the Kendo grid's
   actual multi-row "Ready to Sync" batch — the fix was unit-tested outside
   n8n before pushing, but if you batch multiple rows ready at once, keep an
   eye on the first real run.
-- **Phase 2 only pushes back to Preferred.** The Sutton pull was added
-  2026-09-22 to get cases from both portals into the sheet; Phase 2 (writing
-  scheduling data back + Zoho Calendar) has not been extended to route to
-  Sutton yet. Scheduling a Sutton-portal row via the sheet today will not
-  work correctly — extend Phase 2 to branch on the `Portal` column before
-  relying on it for Sutton cases.
-- **Phase 2 is manual-trigger only.** Decide whether to add a schedule
-  trigger so it runs automatically instead of clicking "Execute workflow"
-  after marking rows ready.
+- **Phase 2 now pushes back to both portals** (2026-10-06). A `Route by
+  Portal` switch after `IF Contact Resolved` sends `Portal == "Sutton"` rows
+  through the Sutton login/`AddScheduleItem` branch (with a `Get Sutton User
+  Id` → `IF Sutton User Id` guard that flags rows missing a user id) and
+  everything else through the original Preferred path; both branches
+  rejoin at `Check AddScheduleItem Result`, so the Zoho Calendar and
+  sheet-update tail is shared and unchanged. Exported JSON:
+  `n8n-workflow/lc360-scheduling-sync-phase2-export-scrubbed.json`.
+  Sutton path awaiting its first real production case — watch the first
+  Sutton write-back.
+- **Phase 2 webhook trigger added** (2026-10-06). `POST
+  /webhook/lc360-sync` gated by an `x-sync-secret` header check; `200 "Phase
+  2 sync started."` on pass, `401 unauthorized` on fail. Response mode is
+  `responseNode` with the responder wired directly after the secret gate,
+  so the webhook acknowledges immediately and the batch runs after the
+  response. Manual trigger preserved. Trigger-only: the webhook supplies no
+  row data; the batch still reads `Ready to Sync` from the sheet. Cron/
+  scheduled auto-run still not configured.
 - **Secrets live in plaintext inside n8n Code/HTTP nodes** (LC360 login
   credentials for both portals, and a Zoho OAuth client id/secret/refresh
   token) rather than n8n's credential vault. This was a deliberate, discussed
@@ -161,7 +183,9 @@ discover and verify LC360's real API contracts (the Kendo grid's
   Scheduling"/"Scheduled" helper tabs). Run with `cd scripts && node
   format-sheet.js`; depends on the Google Sheets API being enabled in the same
   GCP project as the webapp.
-- `webapp/` — read-only Next.js 15 dashboard over the Inspections sheet (two
+- `webapp/` — Next.js 15 scheduling interface over the Inspections sheet (two
   tabs, sortable table / mobile cards, due-date coloring, Rush/Escalated
-  flags). Reads only — scheduling is still via n8n Phase 2. See
-  [`webapp/README.md`](webapp/README.md).
+  flags). Edits the six human-edit columns and writes them back to the sheet,
+  then triggers n8n Phase 2 with its **Sync now** button — this is the primary
+  scheduling interface, so you no longer edit the sheet by hand to schedule.
+  See [`webapp/README.md`](webapp/README.md).

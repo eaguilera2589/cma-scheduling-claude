@@ -2,6 +2,7 @@ import type { Inspection } from '@/lib/types';
 import type { SortKey, SortSpec } from '@/lib/sorting';
 import DueDate from './DueDate';
 import FlagBadge from './FlagBadge';
+import SyncStatusPill from './SyncStatusPill';
 import { rowFlags } from './flags';
 
 interface Props {
@@ -10,6 +11,8 @@ interface Props {
   onSort: (key: SortKey) => void;
   /** "scheduled" adds a (non-sortable) Scheduled column. */
   mode: 'needs' | 'scheduled';
+  /** Opens the row editor (requires a row with a CaseNumber). */
+  onEdit: (caseNumber: string) => void;
 }
 
 const COLUMNS: { key: SortKey; label: string }[] = [
@@ -58,7 +61,7 @@ function cityState(row: Inspection): string {
 }
 
 /** Desktop table view (hidden below the `md` breakpoint). */
-export default function InspectionTable({ rows, sort, onSort, mode }: Props) {
+export default function InspectionTable({ rows, sort, onSort, mode, onEdit }: Props) {
   return (
     <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm md:block">
       <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -74,6 +77,12 @@ export default function InspectionTable({ rows, sort, onSort, mode }: Props) {
             )}
             <th scope="col" className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
               Flags
+            </th>
+            <th scope="col" className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Sync
+            </th>
+            <th scope="col" className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <span className="sr-only">Actions</span>
             </th>
           </tr>
         </thead>
@@ -95,6 +104,19 @@ export default function InspectionTable({ rows, sort, onSort, mode }: Props) {
                     <FlagBadge key={flag} label={flag} />
                   ))}
                 </span>
+              </td>
+              <td className="whitespace-nowrap px-3 py-2">
+                <SyncStatusPill status={row.syncStatus} />
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 text-right">
+                <button
+                  type="button"
+                  onClick={() => onEdit(row.caseNumber)}
+                  disabled={!row.caseNumber}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                >
+                  Edit
+                </button>
               </td>
             </tr>
           ))}

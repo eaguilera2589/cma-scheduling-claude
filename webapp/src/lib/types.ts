@@ -1,8 +1,35 @@
 /**
  * Shape of an inspection row as returned by /api/inspections.
  * All values are trimmed strings; a missing/blank cell is the empty string.
+ *
+ * The interface splits into two groups:
+ * - Read-only columns, maintained by the n8n LC360 pull (PascalCase LC360
+ *   keys in the sheet header row).
+ * - The six human-edit columns (SixEditFields), which the webapp can also
+ *   write back — see lib/sheets.ts updateInspectionFields().
  */
-export interface Inspection {
+
+/** The six human-edit columns of the Inspections sheet. */
+export interface SixEditFields {
+  /** Sheet header: "Schedule Appointment (Y/N)" — "Y" | "N" | "". */
+  scheduleAppointmentYN: string;
+  /** Sheet header: "Date" — appointment date, "MM/DD/YYYY" | "". */
+  date: string;
+  /** Sheet header: "Time" — appointment time, "H:MM AM/PM" | "". */
+  time: string;
+  /** Sheet header: "Attempted to Contact" — usually "Insured" | "Agent" | "Other". */
+  attemptedToContact: string;
+  /** Sheet header: "Comments". */
+  comments: string;
+  /**
+   * Sheet header: "Sync Status" — blank → "Ready to Sync" → "Synced" /
+   * "Error: <reason>". The n8n Phase 2 workflow writes Synced/Error; the
+   * webapp writes whatever the user selects (typically "Ready to Sync").
+   */
+  syncStatus: string;
+}
+
+export interface Inspection extends SixEditFields {
   caseNumber: string;
   insuredName: string;
   locationAddress: string;
@@ -35,4 +62,10 @@ export const EMPTY_INSPECTION: Inspection = {
   escalated: '',
   schedulingStatus: '',
   caseType: '',
+  scheduleAppointmentYN: '',
+  date: '',
+  time: '',
+  attemptedToContact: '',
+  comments: '',
+  syncStatus: '',
 };
