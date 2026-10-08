@@ -11,7 +11,8 @@
     "db:up": "docker compose -f ../infra/docker-compose.staging.yml --env-file ../infra/.env.staging up -d",
     "db:down": "docker compose -f ../infra/docker-compose.staging.yml --env-file ../infra/.env.staging down",
     "db:status": "docker compose -f ../infra/docker-compose.staging.yml ps",
-    "migrate:sheet-to-db": "node --env-file=.env.local --env-file=../infra/.env.staging --import=./test/register.mjs scripts/migrate-sheet-to-db.ts"
+    "migrate:sheet-to-db": "node --env-file=.env.local --env-file=../infra/.env.staging --import=./test/register.mjs scripts/migrate-sheet-to-db.ts",
+    "lc360:ingest": "node --env-file=../infra/.env.staging --import=./test/register.mjs scripts/ingest-lc360-to-db.ts"
   },
   "dependencies": {
     "googleapis": "^183.0.0",
