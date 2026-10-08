@@ -1,6 +1,12 @@
 node_modules/
 .env
+.env.local
+.env*.local
 *.log
 scraper/downloads/
 scraper/recon/
 n8n-workflow/existing-*.json
+
+# staging infra secrets (DB creds / DATABASE_URL) — never commit
+infra/.env.staging
+.env.staging

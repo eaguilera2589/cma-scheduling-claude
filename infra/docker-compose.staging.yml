@@ -1,0 +1,42 @@
+# Staging Postgres for the CMA Scheduling webapp (Phase 1).
+#
+# Isolated, host-local database that backs the staging instance on :3011.
+# Production (:3010) is sheet-backed and is NOT touched by this stack.
+#
+# - Postgres 16, database cma_staging, persistent named volume.
+# - Published on 127.0.0.1 ONLY, host port 5433 (chosen to avoid any clash with
+#   the existing internal litellm-db Postgres; host 5432 is free but 5433 is
+#   unambiguous). Never expose this database beyond localhost.
+#
+# Credentials come from infra/.env.staging (git-ignored; see
+# .env.staging.example for the template). The same DATABASE_URL is reused by the
+# seed script and the staging systemd unit.
+#
+# Usage:
+#   docker compose -f infra/docker-compose.staging.yml --env-file infra/.env.staging up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cma-scheduling-staging-pg
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    # POSTGRES_DB/USER/PASSWORD are read from .env.staging via env_file; the
+    # explicit POSTGRES_DB here guards against a missing env_file value.
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cma_staging}
+    ports:
+      # 127.0.0.1-only binding: reachable from the host (and the staging app),
+      # NOT from the rest of the network.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - cma_staging_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cma_staging} -d ${POSTGRES_DB:-cma_staging}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cma_staging_pgdata:
+    name: cma_staging_pgdata

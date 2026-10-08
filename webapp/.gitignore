@@ -3,6 +3,7 @@ node_modules/
 
 # next.js
 .next/
+.next-staging/
 out/
 
 # env files (GOOGLE_SA_KEY_PATH points outside the repo; never commit this file)

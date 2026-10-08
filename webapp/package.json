@@ -7,16 +7,22 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_OPTIONS=\"--import=./test/register.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON\" node --test src"
+    "test": "NODE_OPTIONS=\"--import=./test/register.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON\" node --test src",
+    "db:up": "docker compose -f ../infra/docker-compose.staging.yml --env-file ../infra/.env.staging up -d",
+    "db:down": "docker compose -f ../infra/docker-compose.staging.yml --env-file ../infra/.env.staging down",
+    "db:status": "docker compose -f ../infra/docker-compose.staging.yml ps",
+    "migrate:sheet-to-db": "node --env-file=.env.local --env-file=../infra/.env.staging --import=./test/register.mjs scripts/migrate-sheet-to-db.ts"
   },
   "dependencies": {
     "googleapis": "^183.0.0",
     "next": "^15.5.0",
+    "pg": "^8.23.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.0.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
