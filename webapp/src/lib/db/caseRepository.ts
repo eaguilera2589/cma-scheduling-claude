@@ -46,10 +46,30 @@ const FIELD_COLUMN: Record<keyof Inspection, string> = {
   attemptedToContact: 'attempted_to_contact',
   comments: 'comments',
   syncStatus: 'sync_status',
+  // DB-only read fields (Phase 4). Selected and mapped, but excluded from the
+  // upsert below — the sheet has no values for them, so writing them would
+  // wipe what the LC360 ingest maintains.
+  policyNumber: 'policy_number',
+  phone: 'phone',
+  agentName: 'agent_name',
+  agentNumber: 'agent_number',
 };
 
 /** Stable, canonical field order for SELECT/INSERT column lists. */
 const FIELD_ORDER: (keyof Inspection)[] = Object.keys(FIELD_COLUMN) as (keyof Inspection)[];
+
+/**
+ * Fields the webapp reads from Postgres but never writes: they have no sheet
+ * counterpart, so an Inspection produced from the sheet always carries a blank
+ * here. upsertCases() (the sheet→db migrate path) must omit them, or a migrate
+ * run would overwrite the LC360 ingest's values with empty strings.
+ */
+const UPSERT_EXCLUDED_FIELDS: ReadonlySet<keyof Inspection> = new Set<keyof Inspection>([
+  'policyNumber',
+  'phone',
+  'agentName',
+  'agentNumber',
+]);
 
 /** DB result column (lowercased, unquoted) -> camelCase field. */
 const RESULT_KEY_TO_FIELD: Record<string, keyof Inspection> = {
@@ -71,6 +91,10 @@ const RESULT_KEY_TO_FIELD: Record<string, keyof Inspection> = {
   attempted_to_contact: 'attemptedToContact',
   comments: 'comments',
   sync_status: 'syncStatus',
+  policy_number: 'policyNumber',
+  phone: 'phone',
+  agent_name: 'agentName',
+  agent_number: 'agentNumber',
 };
 
 /** Editable field -> SQL column identifier used by the write path. */
@@ -139,15 +163,22 @@ export async function updateDbInspectionFields(
 
 /**
  * Idempotent upsert used by the seed/migrate script: INSERT every case, or on
- * case_number conflict refresh all non-PK columns. Blank values are stored as
- * the empty string (matching how the sheet/serving layer treats a blank cell),
- * so a re-run reproduces the sheet exactly.
+ * case_number conflict refresh every sheet-backed non-PK column. Blank values
+ * are stored as the empty string (matching how the sheet/serving layer treats
+ * a blank cell), so a re-run reproduces the sheet exactly. The DB-only columns
+ * (UPSERT_EXCLUDED_FIELDS) are deliberately left alone — they are owned by the
+ * LC360 ingest, not the sheet.
  */
 export async function upsertCases(rows: Inspection[], executor?: Queryable): Promise<number> {
   if (rows.length === 0) return 0;
 
-  const insertColumns = FIELD_ORDER.map((f) => FIELD_COLUMN[f]).join(', ');
-  const updateAssignments = FIELD_ORDER.filter((f) => f !== 'caseNumber')
+  // Only sheet-backed fields: the DB-only columns (policy/agent/phone) are
+  // owned by the LC360 ingest and must survive a migrate re-run untouched.
+  const upsertFields = FIELD_ORDER.filter(
+    (f) => f !== 'caseNumber' && !UPSERT_EXCLUDED_FIELDS.has(f)
+  );
+  const insertColumns = ['case_number', ...upsertFields.map((f) => FIELD_COLUMN[f])].join(', ');
+  const updateAssignments = upsertFields
     .map((f) => `${FIELD_COLUMN[f]} = EXCLUDED.${FIELD_COLUMN[f]}`)
     .join(', ');
 
@@ -162,7 +193,7 @@ export async function upsertCases(rows: Inspection[], executor?: Queryable): Pro
     let p = 0;
     for (const row of chunk) {
       const placeholders: string[] = [];
-      for (const field of FIELD_ORDER) {
+      for (const field of ['caseNumber' as const, ...upsertFields]) {
         params.push(row[field] ?? '');
         p += 1;
         placeholders.push(`$${p}`);

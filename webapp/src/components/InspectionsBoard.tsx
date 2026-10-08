@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Inspection, SixEditFields } from '@/lib/types';
 import { sortInspections, type SortKey, type SortSpec } from '@/lib/sorting';
+import { hasLookupData } from '@/lib/lookup';
 import InspectionTable from './InspectionTable';
 import InspectionCards from './InspectionCards';
 import InspectionEditor from './InspectionEditor';
+import QuickLookup from './QuickLookup';
 
 type Tab = 'needs' | 'scheduled';
 
@@ -81,6 +83,9 @@ export default function InspectionsBoard() {
 
   const all = useMemo(() => rows ?? [], [rows]);
   const needsCount = useMemo(() => all.filter(needsScheduling).length, [all]);
+  // Mode-gate the quick-lookup picker: show it only when rows actually carry
+  // DB-only lookup data, so sheet mode (those fields blank) never renders it.
+  const hasLookup = useMemo(() => hasLookupData(all), [all]);
 
   const visible = useMemo(() => {
     const filtered =
@@ -162,6 +167,8 @@ export default function InspectionsBoard() {
           </div>
         )}
       </div>
+
+      {rows !== null && hasLookup && <QuickLookup rows={all} />}
 
       {rows !== null && (
         <p className="text-sm text-slate-500">

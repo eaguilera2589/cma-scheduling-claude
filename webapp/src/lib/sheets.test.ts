@@ -73,6 +73,20 @@ function grid(): string[][] {
   ];
 }
 
+test('sheet mode leaves the four DB-only Phase 4 fields blank (no header maps to them)', () => {
+  // The sheet has raw LC360 columns like "PolicyNumber"/"AgentName", but
+  // HEADER_TO_FIELD maps none of them to policyNumber/phone/agentName/
+  // agentNumber — so a sheet read must not error and the fields must be "".
+  const rows = rowsToInspections(grid());
+  assert.ok(rows.length > 0);
+  for (const r of rows) {
+    assert.equal(r.policyNumber ?? '', '');
+    assert.equal(r.phone ?? '', '');
+    assert.equal(r.agentName ?? '', '');
+    assert.equal(r.agentNumber ?? '', '');
+  }
+});
+
 test('rowsToInspections reads the six human-edit fields from the human headers', () => {
   const rows = rowsToInspections(grid());
   assert.equal(rows.length, 2, 'blank rows skipped');

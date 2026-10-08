@@ -62,6 +62,62 @@ test('getDbInspections maps snake_case columns to camelCase and nulls to ""', as
   assert.match(calls[0].sql, /FROM cases ORDER BY case_number/);
 });
 
+test('getDbInspections selects and maps the four DB-only fields (Phase 4)', async () => {
+  const { exec, calls } = fake(() => ({
+    rows: [
+      {
+        case_number: '10674154',
+        policy_number: 'IMA426093C',
+        phone: '813-695-9931',
+        agent_name: 'Jaclyn Juron',
+        agent_number: '(813)963-1669',
+      },
+      {
+        // The "~2 cases with blank agent number": NULL must map to "", not crash.
+        case_number: '10674809',
+        policy_number: 'WS706590',
+        phone: '863-701-2916',
+        agent_name: 'Patricia McNamara',
+        agent_number: null,
+      },
+    ],
+  }));
+  const rows = await getDbInspections(exec);
+
+  // All four DB columns are in the SELECT list.
+  for (const col of ['policy_number', 'phone', 'agent_name', 'agent_number']) {
+    assert.ok(
+      new RegExp(`(^|,|\\s)${col}($|,|\\s)`).test(calls[0].sql),
+      `SELECT list must include ${col}`
+    );
+  }
+  assert.equal(rows[0].policyNumber, 'IMA426093C');
+  assert.equal(rows[0].phone, '813-695-9931');
+  assert.equal(rows[0].agentName, 'Jaclyn Juron');
+  assert.equal(rows[0].agentNumber, '(813)963-1669');
+  assert.equal(rows[1].agentNumber, ''); // NULL -> ""
+});
+
+test('upsertCases never writes the DB-only columns (LC360-owned, migrate must not wipe)', async () => {
+  const row: Inspection = {
+    ...EMPTY_INSPECTION,
+    caseNumber: '555',
+    policyNumber: 'SHOULD-NOT-BE-WRITTEN',
+    phone: 'nope',
+    agentName: 'nope',
+    agentNumber: 'nope',
+  };
+  const { exec, calls } = fake(() => ({ rows: [], rowCount: 1 }));
+  await upsertCases([row], exec);
+
+  for (const col of ['policy_number', 'agent_name', 'agent_number']) {
+    assert.ok(!calls[0].sql.includes(col), `upsert SQL must not touch ${col}`);
+  }
+  // `phone` is also a substring of nothing else here, but check precisely:
+  assert.ok(!/[(,]\s*phone\s*[=,)]/.test(calls[0].sql), 'upsert SQL must not touch the phone column');
+  assert.ok(!calls[0].params?.includes('SHOULD-NOT-BE-WRITTEN'), 'values must not be bound either');
+});
+
 test('updateDbInspectionFields binds values as params (never inlined) and returns rowNumber 0', async () => {
   const { exec, calls } = fake(() => ({ rows: [{ case_number: '123' }], rowCount: 1 }));
   const result = await updateDbInspectionFields('123', { date: '10/05/2026', comments: "Robert'); DROP" }, exec);

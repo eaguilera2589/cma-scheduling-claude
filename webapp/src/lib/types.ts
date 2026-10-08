@@ -47,6 +47,19 @@ export interface Inspection extends SixEditFields {
   escalated: string;
   schedulingStatus: string;
   caseType: string;
+  // ---- DB-only read fields (Phase 4 quick-lookup) -------------------------
+  // Present in the Postgres `cases` table (maintained by the LC360 ingest);
+  // the Google Sheet has no such headers, so in sheet mode these stay blank.
+  // NEVER part of the six human-edit write path, and excluded from the
+  // sheet→db upsert so a migrate run can never wipe the ingest's values.
+  /** DB column: policy_number. */
+  policyNumber?: string;
+  /** DB column: phone (insured phone; LC360 precedence Cell→Home→Work). */
+  phone?: string;
+  /** DB column: agent_name. */
+  agentName?: string;
+  /** DB column: agent_number (agent phone; may be blank on some cases). */
+  agentNumber?: string;
 }
 
 export const EMPTY_INSPECTION: Inspection = {
@@ -62,6 +75,10 @@ export const EMPTY_INSPECTION: Inspection = {
   escalated: '',
   schedulingStatus: '',
   caseType: '',
+  policyNumber: '',
+  phone: '',
+  agentName: '',
+  agentNumber: '',
   scheduleAppointmentYN: '',
   date: '',
   time: '',
