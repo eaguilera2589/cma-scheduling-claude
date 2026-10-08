@@ -96,6 +96,32 @@ npm test           # node --test over src/**/*.test.ts (no live Google calls)
 `.env.local` is git-ignored. `GOOGLE_SA_KEY_PATH` points at a file outside the
 repo, so nothing secret is ever committed from here.
 
+### Production service (systemd user unit)
+
+On the host the app runs as the systemd **user** service
+`cma-scheduling-webapp`: production `next start` on port **3010**
+(`http://192.168.1.74:3010/`). The unit
+(`~/.config/systemd/user/cma-scheduling-webapp.service`) launches
+[`scripts/run-webapp-3010.sh`](scripts/run-webapp-3010.sh), which resolves
+`node` at runtime from nvm (the `default` alias → newest installed version as
+fallback) and then execs `next start -p 3010` from the `webapp/` dir, so
+`.env.local` is autoloaded. The unit has `Restart=always` / `RestartSec=3`.
+
+```bash
+systemctl --user status  cma-scheduling-webapp   # also: start / stop / restart
+journalctl --user -u cma-scheduling-webapp       # logs
+loginctl enable-linger                           # one-time: start at boot, no login session needed
+```
+
+> **Don't run `next dev` against the same `.next` while this service is up** —
+> it caused an outage (400s on `/_next/static/*`). Use a separate port and
+> directory for a dev instance.
+
+**Down after a node upgrade?** The service picks node from the nvm `default`
+alias — check it points at an installed version (e.g. `nvm alias default 26`,
+or `nvm install --lts && nvm alias default lts/*`), then
+`systemctl --user restart cma-scheduling-webapp`.
+
 ## Configuration
 
 `webapp/.env.example` → copy to `webapp/.env.local`:
