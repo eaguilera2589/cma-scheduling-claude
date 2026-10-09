@@ -53,6 +53,8 @@ const FIELD_COLUMN: Record<keyof Inspection, string> = {
   phone: 'phone',
   agentName: 'agent_name',
   agentNumber: 'agent_number',
+  caseid: 'caseid',
+  lastSynced: 'last_synced',
 };
 
 /** Stable, canonical field order for SELECT/INSERT column lists. */
@@ -69,6 +71,11 @@ const UPSERT_EXCLUDED_FIELDS: ReadonlySet<keyof Inspection> = new Set<keyof Insp
   'phone',
   'agentName',
   'agentNumber',
+  // caseid is owned by the LC360 ingest (the sheet has no CaseID→DB mapping
+  // here); last_synced is owned by the future Phase-2 write-back. Neither may
+  // be written by the sheet→db migrate path.
+  'caseid',
+  'lastSynced',
 ]);
 
 /** DB result column (lowercased, unquoted) -> camelCase field. */
@@ -95,6 +102,8 @@ const RESULT_KEY_TO_FIELD: Record<string, keyof Inspection> = {
   phone: 'phone',
   agent_name: 'agentName',
   agent_number: 'agentNumber',
+  caseid: 'caseid',
+  last_synced: 'lastSynced',
 };
 
 /** Editable field -> SQL column identifier used by the write path. */

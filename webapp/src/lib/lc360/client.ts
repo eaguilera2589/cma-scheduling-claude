@@ -41,6 +41,8 @@ export interface Lc360Case {
   phone: string;
   agent_name: string;
   agent_number: string;
+  /** LC360 case GUID (raw GetCases `CaseID`); keyed by the Phase-2 write-back. */
+  caseid: string;
 }
 
 export interface PortalConfig {
@@ -283,6 +285,9 @@ export function mapCaseToColumns(c: Record<string, unknown>, portalLabel: string
     phone: firstNonEmpty(c.InsuredCellPhone, c.InsuredHomePhone, c.InsuredWorkPhone),
     agent_name: toCell(c.AgentName),
     agent_number: toCell(c.AgentPhone),
+    // LC360 GUID. `CaseID` is in REQUIRED_FIELDS, so a well-formed row always
+    // carries it; toCell keeps it '' (never null) if the API ever omits it.
+    caseid: toCell(c.CaseID),
   };
 }
 

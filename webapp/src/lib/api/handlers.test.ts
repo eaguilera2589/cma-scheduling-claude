@@ -166,18 +166,35 @@ function syncDeps(response: { ok: boolean; status: number }, opts: { throws?: bo
   return { deps, calls, get cacheCleared() { return cacheCleared; } };
 }
 
-function withEnv(url: string | undefined, secret: string | undefined, fn: () => Promise<void>) {
+function withEnv(
+  url: string | undefined,
+  secret: string | undefined,
+  fn: () => Promise<void>,
+  extra: { dataSource?: string; dbUrl?: string } = {}
+) {
   const savedUrl = process.env.N8N_WEBHOOK_URL;
   const savedSecret = process.env.N8N_SYNC_SECRET;
+  const savedDataSource = process.env.DATA_SOURCE;
+  const savedDbUrl = process.env.N8N_WEBHOOK_URL_DB;
   if (url === undefined) delete process.env.N8N_WEBHOOK_URL;
   else process.env.N8N_WEBHOOK_URL = url;
   if (secret === undefined) delete process.env.N8N_SYNC_SECRET;
   else process.env.N8N_SYNC_SECRET = secret;
+  // Sync-target tests must be deterministic regardless of the ambient env:
+  // DATA_SOURCE and N8N_WEBHOOK_URL_DB default to unset unless requested.
+  if (extra.dataSource === undefined) delete process.env.DATA_SOURCE;
+  else process.env.DATA_SOURCE = extra.dataSource;
+  if (extra.dbUrl === undefined) delete process.env.N8N_WEBHOOK_URL_DB;
+  else process.env.N8N_WEBHOOK_URL_DB = extra.dbUrl;
   return fn().finally(() => {
     if (savedUrl === undefined) delete process.env.N8N_WEBHOOK_URL;
     else process.env.N8N_WEBHOOK_URL = savedUrl;
     if (savedSecret === undefined) delete process.env.N8N_SYNC_SECRET;
     else process.env.N8N_SYNC_SECRET = savedSecret;
+    if (savedDataSource === undefined) delete process.env.DATA_SOURCE;
+    else process.env.DATA_SOURCE = savedDataSource;
+    if (savedDbUrl === undefined) delete process.env.N8N_WEBHOOK_URL_DB;
+    else process.env.N8N_WEBHOOK_URL_DB = savedDbUrl;
   });
 }
 
@@ -222,4 +239,54 @@ test('POST /api/sync: unreachable webhook → 502', async () => {
     const res = await makeSyncHandler(d.deps)();
     assert.equal(res.status, 502);
   });
+});
+
+// ---------------------------------------------------------------------------
+// DB-mode sync targeting (cutover T3): DATA_SOURCE=db must fire the
+// lc360-sync-db workflow; sheet mode must hit N8N_WEBHOOK_URL unchanged.
+
+const SHEET_URL = 'http://n8n.local:5678/webhook/lc360-sync';
+const DB_URL = 'http://n8n.local:5678/webhook/lc360-sync-db';
+
+test('POST /api/sync: db mode with N8N_WEBHOOK_URL_DB set → posts to the DB URL', async () => {
+  const d = syncDeps({ ok: true, status: 200 });
+  await withEnv(SHEET_URL, 'shhh', async () => {
+    const res = await makeSyncHandler(d.deps)();
+    assert.equal(res.status, 202);
+  }, { dataSource: 'db', dbUrl: DB_URL });
+  assert.equal(d.calls.length, 1);
+  assert.equal(d.calls[0].url, DB_URL, 'DB mode must target the explicit lc360-sync-db URL');
+  assert.equal(d.calls[0].init?.method, 'POST');
+  assert.equal(d.calls[0].init?.headers?.['x-sync-secret'], 'shhh', 'same shared secret header');
+});
+
+test('POST /api/sync: db mode without override → derives lc360-sync-db from N8N_WEBHOOK_URL', async () => {
+  const d = syncDeps({ ok: true, status: 200 });
+  await withEnv(SHEET_URL, 'shhh', async () => {
+    const res = await makeSyncHandler(d.deps)();
+    assert.equal(res.status, 202);
+  }, { dataSource: 'db' });
+  assert.equal(d.calls.length, 1);
+  assert.equal(d.calls[0].url, DB_URL, 'trailing lc360-sync segment must swap to lc360-sync-db');
+});
+
+test('POST /api/sync: db mode cannot derive (non-lc360-sync URL, no override) → 503, webhook untouched', async () => {
+  const d = syncDeps({ ok: true, status: 200 });
+  await withEnv('http://n8n.local:5678/webhook/some-other-hook', 'shhh', async () => {
+    const res = await makeSyncHandler(d.deps)();
+    assert.equal(res.status, 503);
+    const json = await res.json();
+    assert.match(json.error, /N8N_WEBHOOK_URL_DB/);
+  }, { dataSource: 'db' });
+  assert.equal(d.calls.length, 0, 'must never fall back to the sheet webhook in db mode');
+});
+
+test('POST /api/sync: sheet mode posts to N8N_WEBHOOK_URL unchanged, even if N8N_WEBHOOK_URL_DB is set', async () => {
+  const d = syncDeps({ ok: true, status: 200 });
+  await withEnv(SHEET_URL, 'shhh', async () => {
+    const res = await makeSyncHandler(d.deps)();
+    assert.equal(res.status, 202);
+  }, { dataSource: 'sheet', dbUrl: DB_URL });
+  assert.equal(d.calls.length, 1);
+  assert.equal(d.calls[0].url, SHEET_URL, 'sheet mode ignores the DB override entirely');
 });

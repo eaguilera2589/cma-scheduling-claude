@@ -9,6 +9,7 @@ import {
   clearInspectionsCache,
   updateInspectionFields,
 } from '../sheets';
+import { resolveDataSource } from '../dataSource';
 import type { SixEditFields } from '../types';
 import { validateEditBody } from '../validation';
 
@@ -89,17 +90,60 @@ export interface SyncHandlerDeps {
 const SYNC_TIMEOUT_MS = 90_000;
 
 /**
+ * Pick the n8n webhook URL to fire, by active data source.
+ *
+ * Sheet mode (prod): exactly `N8N_WEBHOOK_URL` — the pre-cutover behavior,
+ * byte-for-byte unchanged.
+ *
+ * DB mode (staging cutover): the "LC360 Sync (DB)" workflow (id
+ * EYZmcYCOTejZadNY, webhook path `lc360-sync-db`) instead of the sheet one
+ * (`lc360-sync`). Both workflows live on the same n8n host and only the
+ * trailing webhook path segment differs, so:
+ *   1. prefer an explicit `N8N_WEBHOOK_URL_DB` override if set;
+ *   2. else derive it from `N8N_WEBHOOK_URL` by swapping its trailing
+ *      `lc360-sync` path segment for `lc360-sync-db` (a trailing slash is
+ *      accepted and normalized away);
+ *   3. if neither works, return undefined — NEVER fall back to the sheet
+ *      webhook in DB mode (that would push the real production sheet from a
+ *      staging instance); the caller fails loudly with 503 instead.
+ *
+ * The `x-sync-secret` header is unchanged either way: both workflows check the
+ * same `$env.SYNC_SECRET`, so N8N_SYNC_SECRET remains the single shared secret.
+ */
+function resolveSyncWebhookUrl(): string | undefined {
+  const sheetUrl = process.env.N8N_WEBHOOK_URL;
+  if (resolveDataSource() !== 'db') {
+    return sheetUrl;
+  }
+  const dbUrl = process.env.N8N_WEBHOOK_URL_DB;
+  if (dbUrl) {
+    return dbUrl;
+  }
+  const derived = /^(.*\/)lc360-sync\/?$/.exec(sheetUrl ?? '');
+  return derived ? `${derived[1]}lc360-sync-db` : undefined;
+}
+
+/**
  * POST /api/sync — fire the n8n Phase 2 webhook over all "Ready to Sync"
- * rows. URL/secret come from env only (N8N_WEBHOOK_URL / N8N_SYNC_SECRET);
- * 503 when unconfigured, 202 when n8n accepted the trigger, 502 otherwise.
- * The LC360/Zoho push itself happens inside n8n — this only triggers it.
+ * rows. URL/secret come from env only (N8N_WEBHOOK_URL / N8N_SYNC_SECRET,
+ * plus N8N_WEBHOOK_URL_DB as the DB-mode target — see
+ * resolveSyncWebhookUrl); 503 when unconfigured, 202 when n8n accepted the
+ * trigger, 502 otherwise. The LC360/Zoho push itself happens inside n8n —
+ * this only triggers it.
  */
 export function makeSyncHandler(deps: SyncHandlerDeps) {
   return async function POST(): Promise<Response> {
-    const url = process.env.N8N_WEBHOOK_URL;
+    const url = resolveSyncWebhookUrl();
     if (!url) {
+      // DB-mode message names the DB override so a staging misconfiguration
+      // is diagnosable from the response alone; the sheet-mode message (and
+      // entire code path) is unchanged.
+      const configured =
+        resolveDataSource() === 'db'
+          ? 'N8N_WEBHOOK_URL_DB (or N8N_WEBHOOK_URL ending in /lc360-sync) in the environment'
+          : 'N8N_WEBHOOK_URL in .env.local';
       return Response.json(
-        { error: 'Sync is not configured: set N8N_WEBHOOK_URL in .env.local.' },
+        { error: `Sync is not configured: set ${configured}.` },
         { status: 503 }
       );
     }

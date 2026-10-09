@@ -60,6 +60,13 @@ export interface Inspection extends SixEditFields {
   agentName?: string;
   /** DB column: agent_number (agent phone; may be blank on some cases). */
   agentNumber?: string;
+  /** DB column: caseid — the LC360 case GUID; refreshed by the LC360 ingest. */
+  caseid?: string;
+  /**
+   * DB column: last_synced — Phase-2 write-back timestamp. NULL/blank until
+   * the write-back workflow exists; nothing writes it yet.
+   */
+  lastSynced?: string;
 }
 
 export const EMPTY_INSPECTION: Inspection = {
@@ -79,6 +86,8 @@ export const EMPTY_INSPECTION: Inspection = {
   phone: '',
   agentName: '',
   agentNumber: '',
+  caseid: '',
+  lastSynced: '',
   scheduleAppointmentYN: '',
   date: '',
   time: '',

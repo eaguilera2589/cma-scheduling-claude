@@ -40,11 +40,20 @@ const DRY_RUN = process.env.LC360_INGEST_DRY_RUN === '1';
  */
 const PRUNE = process.env.LC360_INGEST_PRUNE === '1';
 
-/** Ensure the `cases` schema exists (idempotent CREATE TABLE IF NOT EXISTS). */
-async function applyMigration(): Promise<void> {
+/**
+ * Schema files applied (in order) before every ingest. All are idempotent
+ * (CREATE/ALTER ... IF NOT EXISTS), so re-running is always safe and a plain
+ * ingest run keeps the staging schema current.
+ */
+const MIGRATION_FILES = ['001_init.sql', '002_sync_columns.sql'];
+
+/** Ensure the `cases` schema is current (idempotent; safe to re-run). */
+async function applyMigrations(): Promise<void> {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const file = path.resolve(here, '..', 'db', 'migrations', '001_init.sql');
-  await getPool().query(fs.readFileSync(file, 'utf8'));
+  for (const name of MIGRATION_FILES) {
+    const file = path.resolve(here, '..', 'db', 'migrations', name);
+    await getPool().query(fs.readFileSync(file, 'utf8'));
+  }
 }
 
 async function main(): Promise<void> {
@@ -101,8 +110,8 @@ async function main(): Promise<void> {
     throw new Error('DATABASE_URL is not set; refusing to run a real ingest without a DB target.');
   }
 
-  console.log('[lc360] applying schema db/migrations/001_init.sql ...');
-  await applyMigration();
+  console.log(`[lc360] applying schema ${MIGRATION_FILES.map((m) => `db/migrations/${m}`).join(' + ')} ...`);
+  await applyMigrations();
 
   console.log(`[lc360] upserting ${deduped.length} case(s) into Postgres ...`);
   const { inserted, updated } = await upsertLc360Cases(deduped);
@@ -152,17 +161,18 @@ async function main(): Promise<void> {
     );
   }
 
-  const populated = await pool.query<{ pn: number; ph: number; an: number; ag: number }>(
+  const populated = await pool.query<{ pn: number; ph: number; an: number; ag: number; cid: number }>(
     `SELECT
        count(*) FILTER (WHERE policy_number IS NOT NULL AND policy_number <> '')::int AS pn,
        count(*) FILTER (WHERE phone         IS NOT NULL AND phone         <> '')::int AS ph,
        count(*) FILTER (WHERE agent_name    IS NOT NULL AND agent_name    <> '')::int AS an,
-       count(*) FILTER (WHERE agent_number  IS NOT NULL AND agent_number  <> '')::int AS ag
+       count(*) FILTER (WHERE agent_number  IS NOT NULL AND agent_number  <> '')::int AS ag,
+       count(*) FILTER (WHERE caseid        IS NOT NULL AND caseid        <> '')::int AS cid
      FROM cases`
   );
   console.log(
     `[lc360] populated (non-empty) — policy_number=${populated.rows[0].pn} phone=${populated.rows[0].ph} ` +
-      `agent_name=${populated.rows[0].an} agent_number=${populated.rows[0].ag}`
+      `agent_name=${populated.rows[0].an} agent_number=${populated.rows[0].ag} caseid=${populated.rows[0].cid}`
   );
   console.log(`[lc360] done in ${Date.now() - started} ms.`);
 }

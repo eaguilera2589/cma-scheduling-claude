@@ -36,6 +36,7 @@ test('toDate: /Date(ms)/, /Date(ms±tz)/, epoch ms, and blank all normalise to M
 
 test('mapCaseToColumns: maps owned cols, applies toDate, stringifies booleans/numbers', () => {
   const c = {
+    CaseID: '68b73b8d-5339-4ec0-9e63-e3a0e0c55838',
     CaseNumber: '2447386',
     InsuredName: 'Jane Doe',
     LocationAddress: '1 Main St',
@@ -56,6 +57,7 @@ test('mapCaseToColumns: maps owned cols, applies toDate, stringifies booleans/nu
   };
   const m = mapCaseToColumns(c, 'Sutton');
   assert.equal(m.case_number, '2447386');
+  assert.equal(m.caseid, '68b73b8d-5339-4ec0-9e63-e3a0e0c55838'); // raw PascalCase CaseID -> caseid
   assert.equal(m.insured_name, 'Jane Doe');
   assert.match(m.inspection_due, /^\d{2}\/\d{2}\/\d{4}$/);
   assert.equal(m.date_scheduled_for, ''); // null date -> ""
@@ -86,6 +88,7 @@ test('upsertLc360Cases: blank input is a no-op', async () => {
 test('upsertLc360Cases: INSERT sets human-edit defaults but UPDATE never touches them', async () => {
   const row: Lc360Case = {
     case_number: '999',
+    caseid: '11111111-2222-3333-4444-555555555555',
     insured_name: 'Jane Doe',
     location_address: '1 Main St',
     location_city: 'Tampa',
@@ -110,7 +113,7 @@ test('upsertLc360Cases: INSERT sets human-edit defaults but UPDATE never touches
   const setClause = sql.slice(sql.indexOf('DO UPDATE SET') + 'DO UPDATE SET'.length, sql.indexOf('RETURNING'));
 
   // ON CONFLICT UPDATE must refresh LC360-owned columns...
-  for (const owned of ['insured_name', 'policy_number', 'phone', 'agent_name', 'agent_number', 'portal']) {
+  for (const owned of ['insured_name', 'policy_number', 'phone', 'agent_name', 'agent_number', 'portal', 'caseid']) {
     assert.ok(setClause.includes(`${owned} = EXCLUDED.${owned}`), `update must refresh ${owned}`);
   }
   // ...and must NOT touch any of the six human-edit columns.
@@ -122,6 +125,9 @@ test('upsertLc360Cases: INSERT sets human-edit defaults but UPDATE never touches
   for (const human of ['schedule_appointment_yn', 'comments', 'sync_status', '"date"', '"time"', 'attempted_to_contact']) {
     assert.ok(insertList.includes(human), `insert must include ${human} for the blank default`);
   }
+  // caseid is inserted (bound as a param) on fresh rows, too.
+  assert.ok(insertList.includes('caseid'), 'insert must include caseid');
+  assert.ok(calls[0].params?.includes('11111111-2222-3333-4444-555555555555'), 'caseid value must be bound as a param');
 });
 
 test('upsertLc360Cases: all values bound as params, never inlined', async () => {

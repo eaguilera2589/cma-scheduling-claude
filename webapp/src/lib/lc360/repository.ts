@@ -35,6 +35,9 @@ const LC360_OWNED_COLUMNS: readonly string[] = [
   'phone',
   'agent_name',
   'agent_number',
+  // LC360 GUID (raw GetCases CaseID). LC360-owned: refreshed on insert AND on
+  // conflict; never one of the six preserved human-edit columns.
+  'caseid',
 ];
 
 /**
