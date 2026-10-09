@@ -52,6 +52,12 @@ export interface Inspection extends SixEditFields {
   // the Google Sheet has no such headers, so in sheet mode these stay blank.
   // NEVER part of the six human-edit write path, and excluded from the
   // sheet→db upsert so a migrate run can never wipe the ingest's values.
+  /**
+   * "Contact at Insured" — DB column: contact_at_insured. Unlike its
+   * neighbours below, the live sheet DOES carry this value (header
+   * "PolicyContactName"), so sheet mode populates it too; see lib/sheets.ts.
+   */
+  contactAtInsured?: string;
   /** DB column: policy_number. */
   policyNumber?: string;
   /** DB column: phone (insured phone; LC360 precedence Cell→Home→Work). */
@@ -82,6 +88,7 @@ export const EMPTY_INSPECTION: Inspection = {
   escalated: '',
   schedulingStatus: '',
   caseType: '',
+  contactAtInsured: '',
   policyNumber: '',
   phone: '',
   agentName: '',

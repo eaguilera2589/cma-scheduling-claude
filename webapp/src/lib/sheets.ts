@@ -81,6 +81,10 @@ const HEADER_TO_FIELD: Record<string, keyof Inspection> = {
   escalated: 'escalated',
   schedulingstatus: 'schedulingStatus',
   casetype: 'caseType',
+  // Read-only LC360 header present on the live sheet (col AT-era verified in
+  // sheets.test.ts LIVE_HEADER): "Contact at Insured". Read-only — never part
+  // of the six-column write path. Absent headers stay tolerated (blank field).
+  policycontactname: 'contactAtInsured',
   // Human-edit columns (writable — see EDIT_FIELD_HEADERS below).
   scheduleappointmentyn: 'scheduleAppointmentYN',
   date: 'date',

@@ -37,6 +37,8 @@ export interface Lc360Case {
   scheduling_status: string;
   case_type: string;
   // Phase-2 columns populated by the direct LC360 ingest.
+  /** "Contact at Insured" (raw GetCases `PolicyContactName`; user-confirmed field). */
+  contact_at_insured: string;
   policy_number: string;
   phone: string;
   agent_name: string;
@@ -280,6 +282,9 @@ export function mapCaseToColumns(c: Record<string, unknown>, portalLabel: string
     escalated: toCell(c.Escalated),
     scheduling_status: toCell(c.SchedulingStatus),
     case_type: toCell(c.CaseType),
+    // "Contact at Insured" (user-confirmed: LC360 field PolicyContactName).
+    // NOT added to REQUIRED_FIELDS — optional read-only field; absent -> ''.
+    contact_at_insured: toCell(c.PolicyContactName),
     policy_number: toCell(c.PolicyNumber),
     // phone precedence: Cell -> Home -> Work (first non-empty wins).
     phone: firstNonEmpty(c.InsuredCellPhone, c.InsuredHomePhone, c.InsuredWorkPhone),

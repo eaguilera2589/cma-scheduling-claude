@@ -45,7 +45,7 @@ const PRUNE = process.env.LC360_INGEST_PRUNE === '1';
  * (CREATE/ALTER ... IF NOT EXISTS), so re-running is always safe and a plain
  * ingest run keeps the staging schema current.
  */
-const MIGRATION_FILES = ['001_init.sql', '002_sync_columns.sql'];
+const MIGRATION_FILES = ['001_init.sql', '002_sync_columns.sql', '003_contact_at_insured.sql'];
 
 /** Ensure the `cases` schema is current (idempotent; safe to re-run). */
 async function applyMigrations(): Promise<void> {
@@ -161,18 +161,20 @@ async function main(): Promise<void> {
     );
   }
 
-  const populated = await pool.query<{ pn: number; ph: number; an: number; ag: number; cid: number }>(
+  const populated = await pool.query<{ pn: number; ph: number; an: number; ag: number; cid: number; cai: number }>(
     `SELECT
-       count(*) FILTER (WHERE policy_number IS NOT NULL AND policy_number <> '')::int AS pn,
-       count(*) FILTER (WHERE phone         IS NOT NULL AND phone         <> '')::int AS ph,
-       count(*) FILTER (WHERE agent_name    IS NOT NULL AND agent_name    <> '')::int AS an,
-       count(*) FILTER (WHERE agent_number  IS NOT NULL AND agent_number  <> '')::int AS ag,
-       count(*) FILTER (WHERE caseid        IS NOT NULL AND caseid        <> '')::int AS cid
+       count(*) FILTER (WHERE policy_number       IS NOT NULL AND policy_number       <> '')::int AS pn,
+       count(*) FILTER (WHERE phone               IS NOT NULL AND phone               <> '')::int AS ph,
+       count(*) FILTER (WHERE agent_name          IS NOT NULL AND agent_name          <> '')::int AS an,
+       count(*) FILTER (WHERE agent_number        IS NOT NULL AND agent_number        <> '')::int AS ag,
+       count(*) FILTER (WHERE caseid              IS NOT NULL AND caseid              <> '')::int AS cid,
+       count(*) FILTER (WHERE contact_at_insured  IS NOT NULL AND contact_at_insured  <> '')::int AS cai
      FROM cases`
   );
   console.log(
     `[lc360] populated (non-empty) — policy_number=${populated.rows[0].pn} phone=${populated.rows[0].ph} ` +
-      `agent_name=${populated.rows[0].an} agent_number=${populated.rows[0].ag} caseid=${populated.rows[0].cid}`
+      `agent_name=${populated.rows[0].an} agent_number=${populated.rows[0].ag} caseid=${populated.rows[0].cid} ` +
+      `contact_at_insured=${populated.rows[0].cai}`
   );
   console.log(`[lc360] done in ${Date.now() - started} ms.`);
 }

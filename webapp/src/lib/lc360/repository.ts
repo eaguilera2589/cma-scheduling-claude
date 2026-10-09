@@ -31,6 +31,8 @@ const LC360_OWNED_COLUMNS: readonly string[] = [
   'escalated',
   'scheduling_status',
   'case_type',
+  // "Contact at Insured" (raw GetCases PolicyContactName). LC360-owned.
+  'contact_at_insured',
   'policy_number',
   'phone',
   'agent_name',

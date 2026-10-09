@@ -34,13 +34,36 @@ export default function InspectionCards({ rows, mode, onEdit }: Props) {
             </span>
           </div>
           <p className="mt-0.5 text-sm text-slate-700">{row.insuredName || '—'}</p>
+          {/* Field order mirrors the desktop table (board UI batch spec):
+              insured, contact, phone, address, then the meta line. */}
+          {row.contactAtInsured && (
+            <p className="text-sm text-slate-500">
+              Contact <span className="text-slate-700">{row.contactAtInsured}</span>
+            </p>
+          )}
+          {row.phone && <p className="text-sm text-slate-500">{row.phone}</p>}
           <p className="text-sm text-slate-500">{row.locationAddress || '—'}</p>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
             {cityState(row) && <span>{cityState(row)}</span>}
-            {row.portal && <span>{row.portal}</span>}
             <span>
               Due <DueDate value={row.inspectionDue} />
             </span>
+            {row.policyNumber && (
+              <span>
+                Policy <span className="text-slate-700">{row.policyNumber}</span>
+              </span>
+            )}
+            {row.agentName && (
+              <span>
+                Agent <span className="text-slate-700">{row.agentName}</span>
+              </span>
+            )}
+            {row.agentNumber && (
+              <span>
+                Agent Phone <span className="text-slate-700">{row.agentNumber}</span>
+              </span>
+            )}
+            {row.portal && <span>{row.portal}</span>}
             {mode === 'scheduled' && row.dateScheduledFor && (
               <span>
                 Scheduled <span className="font-medium text-slate-700">{row.dateScheduledFor}</span>

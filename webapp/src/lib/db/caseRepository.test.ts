@@ -125,6 +125,36 @@ test('getDbInspections selects and maps caseid + last_synced (sync T1)', async (
   assert.equal(rows[1].lastSynced, ''); // NULL -> ""
 });
 
+test('getDbInspections selects and maps contact_at_insured (board UI batch)', async () => {
+  const { exec, calls } = fake(() => ({
+    rows: [
+      { case_number: '2447386', contact_at_insured: 'Jim Client' },
+      { case_number: '2447387', contact_at_insured: null }, // NULL -> ""
+    ],
+  }));
+  const rows = await getDbInspections(exec);
+
+  assert.ok(
+    /(^|,|\s)contact_at_insured($|,|\s)/.test(calls[0].sql),
+    'SELECT list must include contact_at_insured'
+  );
+  assert.equal(rows[0].contactAtInsured, 'Jim Client');
+  assert.equal(rows[1].contactAtInsured, '');
+});
+
+test('upsertCases DOES write contact_at_insured (sheet-mapped, unlike the unmapped DB-only cols)', async () => {
+  const row: Inspection = { ...EMPTY_INSPECTION, caseNumber: '555', contactAtInsured: 'Jim Client' };
+  const { exec, calls } = fake(() => ({ rows: [], rowCount: 1 }));
+  await upsertCases([row], exec);
+
+  const sql = calls[0].sql;
+  const insertList = sql.slice(sql.indexOf('INSERT INTO cases (') + 'INSERT INTO cases ('.length, sql.indexOf(') VALUES'));
+  assert.ok(insertList.includes('contact_at_insured'), 'insert must include contact_at_insured');
+  const setClause = sql.slice(sql.indexOf('DO UPDATE SET') + 'DO UPDATE SET'.length);
+  assert.ok(setClause.includes('contact_at_insured = EXCLUDED.contact_at_insured'), 'migrate must refresh it from the sheet value');
+  assert.ok(calls[0].params?.includes('Jim Client'), 'value must be bound as a param');
+});
+
 test('upsertCases never writes the DB-only columns (LC360-owned, migrate must not wipe)', async () => {
   const row: Inspection = {
     ...EMPTY_INSPECTION,

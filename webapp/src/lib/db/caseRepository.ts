@@ -48,7 +48,11 @@ const FIELD_COLUMN: Record<keyof Inspection, string> = {
   syncStatus: 'sync_status',
   // DB-only read fields (Phase 4). Selected and mapped, but excluded from the
   // upsert below — the sheet has no values for them, so writing them would
-  // wipe what the LC360 ingest maintains.
+  // wipe what the LC360 ingest maintains. contactAtInsured is the exception:
+  // the live sheet has a "PolicyContactName" header for it (mapped in
+  // lib/sheets.ts), so its sheet-sourced value is real data and the migrate
+  // path may write it.
+  contactAtInsured: 'contact_at_insured',
   policyNumber: 'policy_number',
   phone: 'phone',
   agentName: 'agent_name',
@@ -98,6 +102,7 @@ const RESULT_KEY_TO_FIELD: Record<string, keyof Inspection> = {
   attempted_to_contact: 'attemptedToContact',
   comments: 'comments',
   sync_status: 'syncStatus',
+  contact_at_insured: 'contactAtInsured',
   policy_number: 'policyNumber',
   phone: 'phone',
   agent_name: 'agentName',

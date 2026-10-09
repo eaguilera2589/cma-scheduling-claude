@@ -56,6 +56,7 @@ function grid(): string[][] {
       CaseNumber: '2386063',
       InsuredName: 'Jane Doe',
       InspectionDue: '10/15/2026',
+      PolicyContactName: 'Jim Client',
       'Schedule Appointment (Y/N)': 'Y',
       Date: '10/01/2026',
       Time: '9:00 AM',
@@ -85,6 +86,21 @@ test('sheet mode leaves the four DB-only Phase 4 fields blank (no header maps to
     assert.equal(r.agentName ?? '', '');
     assert.equal(r.agentNumber ?? '', '');
   }
+});
+
+test('rowsToInspections maps the PolicyContactName header to contactAtInsured', () => {
+  const rows = rowsToInspections(grid());
+  assert.equal(rows[0].contactAtInsured, 'Jim Client'); // live header is mapped
+  assert.equal(rows[1].contactAtInsured, ''); // blank cell -> ""
+});
+
+test('contactAtInsured stays blank on an odd sheet lacking the PolicyContactName header', () => {
+  // HEADER_TO_FIELD missing-key tolerance: no crash, field comes back "".
+  const header = LIVE_HEADER.filter((h) => h !== 'PolicyContactName');
+  const rows = rowsToInspections([header, ['2386063', 'JANE-DOE-GUID']]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].caseNumber, '2386063');
+  assert.equal(rows[0].contactAtInsured ?? '', '');
 });
 
 test('rowsToInspections reads the six human-edit fields from the human headers', () => {

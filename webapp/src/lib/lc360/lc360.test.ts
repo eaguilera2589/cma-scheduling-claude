@@ -48,6 +48,7 @@ test('mapCaseToColumns: maps owned cols, applies toDate, stringifies booleans/nu
     Escalated: true,
     SchedulingStatus: 0,
     CaseType: 'Property',
+    PolicyContactName: 'Jim Client',
     PolicyNumber: 'AC4080004020',
     AgentName: 'Synergy LLC',
     AgentPhone: '7276567867',
@@ -64,11 +65,16 @@ test('mapCaseToColumns: maps owned cols, applies toDate, stringifies booleans/nu
   assert.equal(m.rush, 'FALSE'); // boolean false -> "FALSE"
   assert.equal(m.escalated, 'TRUE'); // boolean true -> "TRUE"
   assert.equal(m.scheduling_status, '0'); // number -> "0"
+  assert.equal(m.contact_at_insured, 'Jim Client'); // from PolicyContactName
   assert.equal(m.policy_number, 'AC4080004020');
   assert.equal(m.agent_name, 'Synergy LLC');
   assert.equal(m.agent_number, '7276567867'); // from AgentPhone
   assert.equal(m.phone, '(813) 659-6342'); // Cell wins
   assert.equal(m.portal, 'Sutton');
+});
+
+test('mapCaseToColumns: absent PolicyContactName maps to "" (optional field)', () => {
+  assert.equal(mapCaseToColumns({ CaseNumber: '1' }, '').contact_at_insured, '');
 });
 
 test('mapCaseToColumns: phone precedence Cell -> Home -> Work', () => {
@@ -100,6 +106,7 @@ test('upsertLc360Cases: INSERT sets human-edit defaults but UPDATE never touches
     escalated: '',
     scheduling_status: '0',
     case_type: 'Property',
+    contact_at_insured: 'Jim Client',
     policy_number: 'AC1',
     phone: '555',
     agent_name: 'Agent',
@@ -113,7 +120,7 @@ test('upsertLc360Cases: INSERT sets human-edit defaults but UPDATE never touches
   const setClause = sql.slice(sql.indexOf('DO UPDATE SET') + 'DO UPDATE SET'.length, sql.indexOf('RETURNING'));
 
   // ON CONFLICT UPDATE must refresh LC360-owned columns...
-  for (const owned of ['insured_name', 'policy_number', 'phone', 'agent_name', 'agent_number', 'portal', 'caseid']) {
+  for (const owned of ['insured_name', 'contact_at_insured', 'policy_number', 'phone', 'agent_name', 'agent_number', 'portal', 'caseid']) {
     assert.ok(setClause.includes(`${owned} = EXCLUDED.${owned}`), `update must refresh ${owned}`);
   }
   // ...and must NOT touch any of the six human-edit columns.

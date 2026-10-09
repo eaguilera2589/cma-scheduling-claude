@@ -15,12 +15,24 @@ interface Props {
   onEdit: (caseNumber: string) => void;
 }
 
+/**
+ * Column order is contractual (board UI batch spec):
+ * Case # | Insured | Contact at Insured | Insured Phone | Address |
+ * City/State | Due | Policy # | Agent | Agent Phone | Portal
+ * — then Scheduled (scheduled tab only), Flags, Sync, Edit (rendered below).
+ * Keep the tbody cells in the same order.
+ */
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'caseNumber', label: 'Case #' },
   { key: 'insuredName', label: 'Insured' },
+  { key: 'contactAtInsured', label: 'Contact at Insured' },
+  { key: 'phone', label: 'Insured Phone' },
   { key: 'locationAddress', label: 'Address' },
   { key: 'locationCity', label: 'City/State' },
   { key: 'inspectionDue', label: 'Due' },
+  { key: 'policyNumber', label: 'Policy #' },
+  { key: 'agentName', label: 'Agent' },
+  { key: 'agentNumber', label: 'Agent Phone' },
   { key: 'portal', label: 'Portal' },
 ];
 
@@ -91,9 +103,14 @@ export default function InspectionTable({ rows, sort, onSort, mode, onEdit }: Pr
             <tr key={`${row.caseNumber}-${i}`} className="hover:bg-slate-50">
               <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">{row.caseNumber || '—'}</td>
               <td className="px-3 py-2">{row.insuredName || '—'}</td>
+              <td className="px-3 py-2">{row.contactAtInsured || '—'}</td>
+              <td className="whitespace-nowrap px-3 py-2">{row.phone || '—'}</td>
               <td className="px-3 py-2">{row.locationAddress || '—'}</td>
               <td className="whitespace-nowrap px-3 py-2">{cityState(row) || '—'}</td>
               <td className="whitespace-nowrap px-3 py-2"><DueDate value={row.inspectionDue} /></td>
+              <td className="whitespace-nowrap px-3 py-2">{row.policyNumber || '—'}</td>
+              <td className="px-3 py-2">{row.agentName || '—'}</td>
+              <td className="whitespace-nowrap px-3 py-2">{row.agentNumber || '—'}</td>
               <td className="whitespace-nowrap px-3 py-2">{row.portal || '—'}</td>
               {mode === 'scheduled' && (
                 <td className="whitespace-nowrap px-3 py-2">{row.dateScheduledFor || '—'}</td>

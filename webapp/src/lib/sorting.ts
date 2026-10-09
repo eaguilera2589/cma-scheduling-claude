@@ -5,9 +5,14 @@ import { parseMMDDYYYY } from './dates';
 export type SortKey =
   | 'caseNumber'
   | 'insuredName'
+  | 'contactAtInsured'
+  | 'phone'
   | 'locationAddress'
   | 'locationCity'
   | 'inspectionDue'
+  | 'policyNumber'
+  | 'agentName'
+  | 'agentNumber'
   | 'portal';
 
 export interface SortSpec {
@@ -32,7 +37,9 @@ function compare(a: Inspection, b: Inspection, key: SortKey): number {
     if (da && db) return da.getTime() - db.getTime();
     return 0; // handled by the bottom-sinking pass
   }
-  return a[key].localeCompare(b[key], 'en', { numeric: true, sensitivity: 'base' });
+  // `?? ''` — the DB-only keys (contactAtInsured/phone/policyNumber/agent*)
+  // are optional on the type; blanks sort with the empty-string bottom rule.
+  return (a[key] ?? '').localeCompare(b[key] ?? '', 'en', { numeric: true, sensitivity: 'base' });
 }
 
 /**
@@ -42,8 +49,8 @@ function compare(a: Inspection, b: Inspection, key: SortKey): number {
 export function sortInspections(rows: Inspection[], { key, dir }: SortSpec): Inspection[] {
   const mult = dir === 'asc' ? 1 : -1;
   return [...rows].sort((a, b) => {
-    const aBottom = isBottom(a[key], key);
-    const bBottom = isBottom(b[key], key);
+    const aBottom = isBottom(a[key] ?? '', key);
+    const bBottom = isBottom(b[key] ?? '', key);
     if (aBottom !== bBottom) return aBottom ? 1 : -1;
     const cmp = compare(a, b, key);
     if (cmp !== 0) return cmp * mult;
