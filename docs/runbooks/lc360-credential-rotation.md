@@ -109,10 +109,24 @@ it does **not** update automatically and must be changed in the same window.
   cannot create credentials — 403). When an admin creates an `httpHeaderAuth` credential
   (header `x-sync-secret`) in the n8n UI, set Phase 2's Webhook node → Authentication =
   Header Auth, delete the `Check Webhook Secret` + `Webhook Response Unauthorized` nodes,
-  wire `Webhook Trigger → Webhook Response OK`, set `N8N_SYNC_SECRET` in
-  `webapp/.env.local` to the same value, and `systemctl --user restart cma-scheduling-webapp cma-scheduling-webapp-staging`.
+  wire `Webhook Trigger → Webhook Response OK`, set `N8N_SYNC_SECRET` in `webapp/.env.local`
+  **and** `infra/.env.staging` to the same value (all consumers below), and
+  `systemctl --user restart cma-scheduling-webapp cma-scheduling-webapp-staging`.
   Until then, `SYNC_SECRET` rotates the same way as Step 4: edit it in `docker/n8n/.env` +
-  `docker compose up -d`, and update the webapp sender in the same window.
+  `docker compose up -d`, and update **all** webapp senders in the same window.
+  - **`SYNC_SECRET` consumers — update ALL THREE in one window:** n8n `SYNC_SECRET` in
+    `docker/n8n/.env` (checked via `x-sync-secret` by both sync workflows), `N8N_SYNC_SECRET`
+    in `webapp/.env.local` (prod sender, `cma-scheduling-webapp.service` `:3010`), and
+    `N8N_SYNC_SECRET` in `infra/.env.staging` (staging sender,
+    `cma-scheduling-webapp-staging.service` `:3011`).
+  - **Precedence:** the staging unit loads `infra/.env.staging` as a systemd `EnvironmentFile`
+    **before Next starts, so it wins over `webapp/.env.local` for `:3011`** — updating only
+    `.env.local` silently leaves staging serving the old secret (sync fails `401`→`502`).
+  - **Drift guard — run at rotation time from the repo root** (hashes both copies of the
+    line without printing values; the two hashes must be equal):
+    `grep '^N8N_SYNC_SECRET=' webapp/.env.local | sha256sum && grep '^N8N_SYNC_SECRET=' infra/.env.staging | sha256sum`
+    — the empty-input hash `e3b0c442…` on both means the key is **missing** from both files,
+    not that they match.
 - **Zoho — de-hardcoded on BOTH Zoho-bearing workflows (2026-10-09):** no inline Zoho OAuth
   literals remain in any live n8n workflow; both read `={{ $env.ZOHO_REFRESH_TOKEN }}` /
   `ZOHO_CLIENT_ID` / `ZOHO_CLIENT_SECRET` from `docker/n8n/.env` via compose pass-throughs.

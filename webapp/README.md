@@ -132,7 +132,7 @@ or `nvm install --lts && nvm alias default lts/*`), then
 | `SHEET_TAB` | no | `Inspections` | Tab name to read/write. |
 | `GOOGLE_SA_KEY_PATH` | yes* | — | Absolute path to the service-account JSON, **outside the repo**. |
 | `N8N_WEBHOOK_URL` | for Sync now | — | POST URL of the n8n "LC360 Scheduling Sync (Phase 2)" webhook. While unset, `/api/sync` returns `503` and the UI shows a configuration error. |
-| `N8N_SYNC_SECRET` | if the webhook checks a secret | — | Sent to n8n as the `x-sync-secret` header. |
+| `N8N_SYNC_SECRET` | if the webhook checks a secret | — | Sent to n8n as the `x-sync-secret` header. Staging also reads it from `infra/.env.staging` — see [rotation runbook](../docs/runbooks/lc360-credential-rotation.md) for precedence. |
 
 \* `GOOGLE_APPLICATION_CREDENTIALS` is accepted as a fallback for the key path
 if `GOOGLE_SA_KEY_PATH` is unset.
