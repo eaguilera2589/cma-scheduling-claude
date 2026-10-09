@@ -93,14 +93,20 @@ export default function InspectionTable({ rows, sort, onSort, mode, onEdit }: Pr
             <th scope="col" className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
               Sync
             </th>
-            <th scope="col" className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {/* Sticky (positioned) so the absolutely-positioned .sr-only span
+                is contained here instead of escaping the overflow wrapper and
+                creating a page-level horizontal scrollbar. */}
+            <th
+              scope="col"
+              className="sticky right-0 z-[2] whitespace-nowrap border-l border-slate-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[-4px_0_6px_-2px_rgba(15,23,42,0.10)]"
+            >
               <span className="sr-only">Actions</span>
             </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((row, i) => (
-            <tr key={`${row.caseNumber}-${i}`} className="hover:bg-slate-50">
+            <tr key={`${row.caseNumber}-${i}`} className="group hover:bg-slate-50">
               <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">{row.caseNumber || '—'}</td>
               <td className="px-3 py-2">{row.insuredName || '—'}</td>
               <td className="px-3 py-2">{row.contactAtInsured || '—'}</td>
@@ -125,7 +131,7 @@ export default function InspectionTable({ rows, sort, onSort, mode, onEdit }: Pr
               <td className="whitespace-nowrap px-3 py-2">
                 <SyncStatusPill status={row.syncStatus} />
               </td>
-              <td className="whitespace-nowrap px-3 py-2 text-right">
+              <td className="sticky right-0 z-[1] whitespace-nowrap border-l border-slate-200 bg-white px-3 py-2 text-right shadow-[-4px_0_6px_-2px_rgba(15,23,42,0.10)] group-hover:bg-slate-50">
                 <button
                   type="button"
                   onClick={() => onEdit(row.caseNumber)}
