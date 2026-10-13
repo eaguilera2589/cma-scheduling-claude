@@ -14,5 +14,8 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 
+# geo cache (runtime data; seed template is data/geo-cache.example.json)
+data/geo-cache.json
+
 # misc
 .DS_Store
