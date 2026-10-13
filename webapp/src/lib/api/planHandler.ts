@@ -121,8 +121,10 @@ export function makePlanHandler(deps: PlanHandlerDeps) {
     }
     const scoped = scopeRows(rows, scope);
 
-    // Home first, then one point per scoped row, all in parallel (the file
-    // geocoder de-dupes cache misses internally; normally everything is hot).
+    // Home first, then one point per scoped row, all in parallel. The file
+    // geocoder is cache-first but does NOT de-dupe concurrent misses: on a
+    // cold cache these fan out to Google in parallel (duplicate addresses
+    // included). Normal serving hits a warm cache, so fan-out is rare.
     let home: GeoPoint | null;
     let points: (GeoPoint | null)[];
     try {
