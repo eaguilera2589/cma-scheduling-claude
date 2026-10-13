@@ -7,8 +7,9 @@ import { SYNC_POLL_INTERVAL_MS, pollOutcome, createPollGuard } from '@/lib/syncS
 import InspectionTable from './InspectionTable';
 import InspectionCards from './InspectionCards';
 import InspectionEditor from './InspectionEditor';
+import RoutePlanner from './RoutePlanner';
 
-type Tab = 'needs' | 'scheduled';
+type Tab = 'needs' | 'scheduled' | 'route';
 
 type SyncState =
   | { kind: 'idle' }
@@ -22,6 +23,9 @@ type SyncState =
 const TABS: { id: Tab; label: string }[] = [
   { id: 'needs', label: 'Needs Scheduling' },
   { id: 'scheduled', label: 'Scheduled' },
+  // Route Planner fetches its own /api/plan data (per-city day plans), so it
+  // carries no board row count.
+  { id: 'route', label: 'Route Planner' },
 ];
 
 function needsScheduling(row: Inspection): boolean {
@@ -150,6 +154,7 @@ export default function InspectionsBoard() {
   const all = useMemo(() => rows ?? [], [rows]);
 
   const visible = useMemo(() => {
+    if (tab === 'route') return []; // the planner renders its own data, not board rows
     const filtered =
       tab === 'needs' ? all.filter(needsScheduling) : all.filter((r) => !needsScheduling(r));
     return sortInspections(filtered, sort);
@@ -162,7 +167,10 @@ export default function InspectionsBoard() {
   }
 
   const needsCount = useMemo(() => all.filter(needsScheduling).length, [all]);
-  const counts: Record<Tab, number> = { needs: needsCount, scheduled: all.length - needsCount };
+  const counts: Record<Exclude<Tab, 'route'>, number> = {
+    needs: needsCount,
+    scheduled: all.length - needsCount,
+  };
   const editingRow = editingCase ? all.find((r) => r.caseNumber === editingCase) : undefined;
 
   return (
@@ -200,9 +208,11 @@ export default function InspectionsBoard() {
               }`}
             >
               {t.label}
-              <span className={`ml-1.5 text-xs ${tab === t.id ? 'text-slate-300' : 'text-slate-400'}`}>
-                {counts[t.id]}
-              </span>
+              {t.id !== 'route' && (
+                <span className={`ml-1.5 text-xs ${tab === t.id ? 'text-slate-300' : 'text-slate-400'}`}>
+                  {counts[t.id]}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -236,23 +246,29 @@ export default function InspectionsBoard() {
         )}
       </div>
 
-      {rows !== null && (
-        <p className="text-sm text-slate-500">
-          Showing {visible.length} inspection{visible.length === 1 ? '' : 's'}
-        </p>
-      )}
+      {tab === 'route' ? (
+        <RoutePlanner />
+      ) : (
+        <>
+          {rows !== null && (
+            <p className="text-sm text-slate-500">
+              Showing {visible.length} inspection{visible.length === 1 ? '' : 's'}
+            </p>
+          )}
 
-      {rows !== null &&
-        (visible.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
-            No inspections in this view.
-          </p>
-        ) : (
-          <>
-            <InspectionTable rows={visible} sort={sort} onSort={toggleSort} mode={tab} onEdit={setEditingCase} />
-            <InspectionCards rows={visible} mode={tab} onEdit={setEditingCase} />
-          </>
-        ))}
+          {rows !== null &&
+            (visible.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                No inspections in this view.
+              </p>
+            ) : (
+              <>
+                <InspectionTable rows={visible} sort={sort} onSort={toggleSort} mode={tab} onEdit={setEditingCase} />
+                <InspectionCards rows={visible} mode={tab} onEdit={setEditingCase} />
+              </>
+            ))}
+        </>
+      )}
 
       {editingRow && (
         <InspectionEditor

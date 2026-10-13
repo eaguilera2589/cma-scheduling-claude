@@ -14,13 +14,19 @@ by `CaseNumber`.
 
 ## What it shows
 
-Two tabs, splitting every case on the `Date Scheduled For` column:
+Two board tabs, splitting every case on the `Date Scheduled For` column:
 
 - **Needs Scheduling** — rows where `Date Scheduled For` is blank.
 - **Scheduled** — rows where it holds a date (this tab also shows a
   non-sortable *Scheduled* column with that date).
 
-Each tab shows a live count.
+Each board tab shows a live count. A third tab, **Route Planner**, plans the
+open pool into one card per city day — farthest city first, with stops graded
+1..n in driving order (grade 1 starts farthest from home, the last ends
+closest), each row showing leg miles, due date (red when due-soon/overdue),
+and Rush/Escalated pills. Cases whose address cannot be geocoded land in a
+collapsible "Needs address fix" list. Needs `GOOGLE_MAPS_API_KEY` plus a warm
+geo cache (`npm run geo:backfill`); without it the tab shows a setup banner.
 
 Desktop renders a table (Case #, Insured, Address, City/State, Due, Portal,
 Flags, Sync); below the `md` breakpoint the same rows render as stacked cards.
@@ -133,6 +139,8 @@ or `nvm install --lts && nvm alias default lts/*`), then
 | `GOOGLE_SA_KEY_PATH` | yes* | — | Absolute path to the service-account JSON, **outside the repo**. |
 | `N8N_WEBHOOK_URL` | for Sync now | — | POST URL of the n8n "LC360 Scheduling Sync (Phase 2)" webhook. While unset, `/api/sync` returns `503` and the UI shows a configuration error. |
 | `N8N_SYNC_SECRET` | if the webhook checks a secret | — | Sent to n8n as the `x-sync-secret` header. Staging also reads it from `infra/.env.staging` — see [rotation runbook](../docs/runbooks/lc360-credential-rotation.md) for precedence. |
+| `GOOGLE_MAPS_API_KEY` | for Route Planner | — | Google **Geocoding** API key, used only on geo-cache misses (`/api/plan`, `npm run geo:backfill`). While unset, `/api/plan` returns `200` with `configError` and the tab shows a setup banner. |
+| `HOME_ADDRESS` | no | `4305 Glendon Place, Valrico, FL` | Start/end point of every planned day in the Route Planner. |
 
 \* `GOOGLE_APPLICATION_CREDENTIALS` is accepted as a fallback for the key path
 if `GOOGLE_SA_KEY_PATH` is unset.
@@ -158,6 +166,12 @@ N8N_SYNC_SECRET=...
   sheet-access failure, `200` + canonicalized values on success.
 - `POST /api/sync` — fires the n8n webhook. `202` accepted, `502` n8n
   failed/unreachable, `503` unconfigured.
+- `GET /api/plan` — per-city day plans for the open pool
+  (`?scope=scheduled` / `?scope=all` variants; default = unscheduled).
+  Returns `{ generatedAt, home, cities, unresolved }` with stops graded 1..n
+  farthest→closest to home — the UI never re-sorts. `200` + `configError`
+  (empty cities) when geocoding is not configured, `502` when the inspection
+  source is unreachable.
 
 ## Sheet access
 
