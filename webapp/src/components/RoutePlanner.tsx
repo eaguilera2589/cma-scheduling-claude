@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { PlanResponse, PlannedStopView } from '@/lib/api/planHandler';
+import { telHref } from '@/lib/telHref';
 import FlagBadge from './FlagBadge';
 
 function miles(n: number): string {
@@ -44,6 +45,7 @@ function StopRow({
   last: boolean;
   many: boolean;
 }) {
+  const phoneHref = telHref(stop.phone);
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
       <span
@@ -65,7 +67,11 @@ function StopRow({
             {stop.insuredName}
           </p>
         )}
-        {stop.phone && <p className="truncate text-sm text-slate-500">{stop.phone}</p>}
+        {phoneHref && (
+          <a href={phoneHref} className="block truncate text-sm text-slate-500 hover:underline">
+            {stop.phone}
+          </a>
+        )}
       </div>
       {stop.flags.length > 0 && (
         <span className="flex gap-1">
