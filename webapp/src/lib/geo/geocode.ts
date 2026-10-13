@@ -4,7 +4,9 @@
  * Google Geocoding API (`maps.googleapis.com/maps/api/geocode/json`) is
  * called ONLY on a cache miss; results — including failed lookups — are
  * memoized in `webapp/data/geo-cache.json` keyed by a normalized address so
- * repeat lookups (and repeat failures) never hit the network again.
+ * repeat lookups (and repeat failures) never hit the network again. Concurrent
+ * misses of the same key are also de-duplicated in memory (one in-flight
+ * lookup per key), so a parallel fan-out never pays twice for one address.
  *
  * Failure semantics, deliberately split:
  *  - Missing/blank GOOGLE_MAPS_API_KEY at call time (or a Google
@@ -120,6 +122,12 @@ export function createFileGeocoder(opts: GeocoderOptions = {}): Geocoder {
 
   let cache: Map<string, CacheEntry> | null = null;
 
+  // In-flight cache misses keyed by normalized address: concurrent lookups
+  // for the same key share ONE network call. Entries are removed when
+  // settled, so a rejection (e.g. a config error, which is never persisted)
+  // can never linger and poison later calls.
+  const inFlight = new Map<string, Promise<GeoPoint | null>>();
+
   function loadCache(): Map<string, CacheEntry> {
     if (cache) return cache;
     cache = new Map();
@@ -150,13 +158,8 @@ export function createFileGeocoder(opts: GeocoderOptions = {}): Geocoder {
     }
   }
 
-  async function geocodeAddress(address: string): Promise<GeoPoint | null> {
-    const entryKey = normalizeAddressKey(address);
-    if (!entryKey) return null;
-
-    const cached = loadCache().get(entryKey);
-    if (cached) return isHit(cached) ? { lat: cached.lat, lng: cached.lng } : null;
-
+  /** Cache-miss path: config check, one Google call, persist the outcome. */
+  async function lookupUncached(entryKey: string, address: string): Promise<GeoPoint | null> {
     const apiKey = (opts.apiKey ?? process.env.GOOGLE_MAPS_API_KEY ?? '').trim();
     if (!apiKey) {
       throw new GeocodeConfigError(
@@ -198,6 +201,29 @@ export function createFileGeocoder(opts: GeocoderOptions = {}): Geocoder {
 
     persist(entryKey, { failed: true, reason: status });
     return null;
+  }
+
+  async function geocodeAddress(address: string): Promise<GeoPoint | null> {
+    const entryKey = normalizeAddressKey(address);
+    if (!entryKey) return null;
+
+    const cached = loadCache().get(entryKey);
+    if (cached) return isHit(cached) ? { lat: cached.lat, lng: cached.lng } : null;
+
+    const pending = inFlight.get(entryKey);
+    if (pending) return pending;
+
+    // Everything up to inFlight.set() runs synchronously (the async function
+    // bodies only suspend at their internal awaits), so a follower issued in
+    // the same tick always finds the entry. Delete on settle: a settled
+    // rejection must never be replayed to later callers, and a fresh entry
+    // can only be installed after this one is gone, so this delete can never
+    // clobber a newer in-flight lookup.
+    const lookup = lookupUncached(entryKey, address).finally(() => {
+      inFlight.delete(entryKey);
+    });
+    inFlight.set(entryKey, lookup);
+    return lookup;
   }
 
   return { geocodeAddress };

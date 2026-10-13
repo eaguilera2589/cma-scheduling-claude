@@ -127,6 +127,100 @@ test('geocodeAddress: REQUEST_DENIED throws GeocodeConfigError, not memoized', a
   assert.equal(fs.existsSync(cachePath), false, 'a key problem must stay retryable after the fix');
 });
 
+// --- in-flight de-dup: concurrent misses of the same key share ONE call ---
+
+test('geocodeAddress: concurrent misses for the same address fire exactly ONE fetch', async () => {
+  let fetches = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { cachePath, geocoder } = makeGeocoder(async () => {
+    fetches++;
+    await gate;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'OK',
+        results: [{ geometry: { location: { lat: 27.1, lng: -82.4 } } }],
+      }),
+    };
+  });
+
+  // Three concurrent cold-cache lookups: exact repeat, unit-variant repeat
+  // (same normalized key), and casing variant — all must share one request.
+  const a = geocoder.geocodeAddress('1 Shared St, Tampa, FL');
+  const b = geocoder.geocodeAddress('1 Shared St APT 2, Tampa, FL');
+  const c = geocoder.geocodeAddress('1 shared st, TAMPA, fl');
+  release();
+  const [pa, pb, pc] = await Promise.all([a, b, c]);
+
+  assert.equal(fetches, 1, 'concurrent misses for one key must share a single network call');
+  assert.deepEqual(pa, { lat: 27.1, lng: -82.4 });
+  assert.deepEqual(pb, pa);
+  assert.deepEqual(pc, pa);
+
+  // The shared result is persisted, so later calls are plain cache hits.
+  const stored = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+  assert.deepEqual(stored['1 shared st, tampa, fl'], { lat: 27.1, lng: -82.4 });
+  assert.deepEqual(await geocoder.geocodeAddress('1 Shared St, Tampa, FL'), pa);
+  assert.equal(fetches, 1, 'a settled entry must be served from the cache');
+});
+
+test('geocodeAddress: concurrent misses for DIFFERENT addresses each fetch once', async () => {
+  const urls: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { geocoder } = makeGeocoder(async (url) => {
+    urls.push(url);
+    await gate;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'OK',
+        results: [{ geometry: { location: { lat: 27.9, lng: -82.4 } } }],
+      }),
+    };
+  });
+
+  const a = geocoder.geocodeAddress('1 Alpha St, Tampa, FL');
+  const b = geocoder.geocodeAddress('2 Bravo St, Tampa, FL');
+  release();
+  await Promise.all([a, b]);
+
+  assert.equal(urls.length, 2, 'distinct keys must not be collapsed by the dedup map');
+  assert.notEqual(urls[0], urls[1]);
+});
+
+test('geocodeAddress: an in-flight config-error rejection does not poison the dedup map', async () => {
+  let mode = 'denied';
+  const { cachePath, geocoder } = makeGeocoder(async () => ({
+    ok: true,
+    status: 200,
+    json: async () =>
+      mode === 'denied'
+        ? { status: 'REQUEST_DENIED', results: [] }
+        : { status: 'OK', results: [{ geometry: { location: { lat: 27.5, lng: -82.2 } } }] },
+  }));
+
+  // Two concurrent callers share the in-flight lookup; both see the error…
+  const a = geocoder.geocodeAddress('1 denied st');
+  const b = geocoder.geocodeAddress('1 DENIED ST');
+  await assert.rejects(a, GeocodeConfigError);
+  await assert.rejects(b, GeocodeConfigError);
+
+  // …and once the operator fixes the key, a later call RETRIES (the settled
+  // rejection left no dedup entry behind) and succeeds.
+  mode = 'ok';
+  assert.deepEqual(await geocoder.geocodeAddress('1 denied st'), { lat: 27.5, lng: -82.2 });
+  const stored = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+  assert.deepEqual(stored['1 denied st'], { lat: 27.5, lng: -82.2 });
+});
+
 test('geocodeAddress: empty/blank address resolves null without a call', async () => {
   const { geocoder } = makeGeocoder(async () => {
     throw new Error('must not fetch for a blank address');
