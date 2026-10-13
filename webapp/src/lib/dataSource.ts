@@ -18,6 +18,21 @@ export function resolveDataSource(): DataSource {
   return process.env.DATA_SOURCE === 'db' ? 'db' : 'sheet';
 }
 
+/**
+ * Human-readable name of the active source, for user-facing error copy ("Failed
+ * to write the update to ${sourceLabel()}."). In DB mode the sheet is NOT the
+ * sink, so the message must say "the database", not "the Google Sheet". The
+ * sheet-mode string is byte-for-byte what it has always been.
+ *
+ * Lives here (the one source-decision module) rather than in lib/sheets or the
+ * route handlers so neither the `pg` nor the `googleapis` dependency is pulled in
+ * by importing it — both the Next-free handlers and the App Router routes can use
+ * it behind the same DATA_SOURCE gate as everything else.
+ */
+export function sourceLabel(): string {
+  return resolveDataSource() === 'db' ? 'the database' : 'the Google Sheet';
+}
+
 /** Read all inspections from the active source. */
 export async function loadInspections(): Promise<Inspection[]> {
   if (resolveDataSource() === 'db') {

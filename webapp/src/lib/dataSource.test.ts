@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveDataSource, clearSourceCache } from './dataSource';
+import { resolveDataSource, clearSourceCache, sourceLabel } from './dataSource';
 
 function withDataSource(value: string | undefined, fn: () => void) {
   const saved = process.env.DATA_SOURCE;
@@ -29,6 +29,17 @@ test('resolveDataSource: unset / empty / "sheet" / typo all mean sheet', () => {
 
 test('resolveDataSource: exactly "db" selects the database source', () => {
   withDataSource('db', () => assert.equal(resolveDataSource(), 'db'));
+});
+
+test('sourceLabel: names the active source in user-facing error copy', () => {
+  // Sheet mode (default/anything-but-db) keeps the exact historical wording.
+  for (const v of [undefined, '', 'sheet', 'postgres']) {
+    withDataSource(v, () =>
+      assert.equal(sourceLabel(), 'the Google Sheet', `value ${JSON.stringify(v)} -> Google Sheet`)
+    );
+  }
+  // DB mode must say "the database" — the sheet is not the sink after cutover.
+  withDataSource('db', () => assert.equal(sourceLabel(), 'the database'));
 });
 
 test('clearSourceCache resolves without throwing in db mode (no DB touched)', async () => {

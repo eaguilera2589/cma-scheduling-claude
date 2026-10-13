@@ -101,7 +101,7 @@ test('PATCH unknown CaseNumber: 404', async () => {
   assert.equal(r.cacheCleared, 0);
 });
 
-test('PATCH sheet-access failure: 500 with underlying message in detail, no cache bust', async () => {
+test('PATCH sheet-access failure (sheet mode): 500 with underlying message in detail, no cache bust', async () => {
   const r = recorder();
   const PATCH = makePatchInspectionHandler({
     ...r.deps,
@@ -109,11 +109,38 @@ test('PATCH sheet-access failure: 500 with underlying message in detail, no cach
       throw new Error('quota');
     },
   });
-  const res = await PATCH(patchRequest({ comments: 'hello' }), ctx('2386063'));
-  assert.equal(res.status, 500);
-  const json = await res.json();
-  assert.equal(json.error, 'Failed to write the update to the Google Sheet.');
-  assert.equal(json.detail, 'quota', 'underlying error message surfaced for debugging');
+  // Force sheet mode so the wording is deterministic regardless of ambient env.
+  await withEnv(undefined, undefined, async () => {
+    const res = await PATCH(patchRequest({ comments: 'hello' }), ctx('2386063'));
+    assert.equal(res.status, 500);
+    const json = await res.json();
+    assert.equal(json.error, 'Failed to write the update to the Google Sheet.');
+    assert.equal(json.detail, 'quota', 'underlying error message surfaced for debugging');
+  });
+  assert.equal(r.cacheCleared, 0);
+});
+
+test('PATCH write failure in DB mode: 500 says "the database", not the sheet', async () => {
+  const r = recorder();
+  const PATCH = makePatchInspectionHandler({
+    ...r.deps,
+    update: async () => {
+      throw new Error('connection terminated');
+    },
+  });
+  await withEnv(
+    undefined,
+    undefined,
+    async () => {
+      const res = await PATCH(patchRequest({ comments: 'hello' }), ctx('2386063'));
+      assert.equal(res.status, 500);
+      const json = await res.json();
+      assert.equal(json.error, 'Failed to write the update to the database.');
+      assert.ok(!json.error.includes('Google Sheet'), 'DB mode must not name the sheet');
+      assert.equal(json.detail, 'connection terminated');
+    },
+    { dataSource: 'db' }
+  );
   assert.equal(r.cacheCleared, 0);
 });
 

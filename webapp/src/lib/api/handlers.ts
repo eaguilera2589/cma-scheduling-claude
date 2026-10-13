@@ -9,7 +9,7 @@ import {
   clearInspectionsCache,
   updateInspectionFields,
 } from '../sheets';
-import { resolveDataSource } from '../dataSource';
+import { resolveDataSource, sourceLabel } from '../dataSource';
 import type { SixEditFields } from '../types';
 import { validateEditBody } from '../validation';
 
@@ -74,7 +74,7 @@ export function makePatchInspectionHandler(deps: PatchInspectionDeps) {
       // cause is visible without reading the server log.
       const message = err instanceof Error ? err.message : String(err);
       return Response.json(
-        { error: 'Failed to write the update to the Google Sheet.', detail: message },
+        { error: `Failed to write the update to ${sourceLabel()}.`, detail: message },
         { status: 500 }
       );
     }
