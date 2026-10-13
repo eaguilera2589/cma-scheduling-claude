@@ -12,6 +12,17 @@ the contact attempt.
 column; webhook trigger added alongside the manual trigger) are
 active/verified against real cases.
 
+> **Data source (cutover).** Production scheduling data is moving from the
+> Google Sheet to **Postgres** (`DATA_SOURCE=db`). The webapp on **:3010**
+> will read/write a promoted Postgres `cases` table (the former staging DB,
+> fed directly from LC360 by the ingest timer) and fire the **"LC360 Sync
+> (DB)"** write-back workflow on **Sync now**. The **sheet pull** stays
+> active for **1–2 weeks** as a warm rollback copy. This promotion is a
+> gated, human-run procedure — see
+> [`docs/runbooks/db-cutover.md`](docs/runbooks/db-cutover.md) for the exact
+> sequence, verification, and rollback. Until that runbook is executed,
+> prod remains sheet-backed.
+
 ## Architecture
 
 The production system runs entirely in n8n (`http://192.168.1.74:5678`) as
@@ -183,9 +194,12 @@ discover and verify LC360's real API contracts (the Kendo grid's
   Scheduling"/"Scheduled" helper tabs). Run with `cd scripts && node
   format-sheet.js`; depends on the Google Sheets API being enabled in the same
   GCP project as the webapp.
-- `webapp/` — Next.js 15 scheduling interface over the Inspections sheet (two
-  tabs, sortable table / mobile cards, due-date coloring, Rush/Escalated
-  flags). Edits the six human-edit columns and writes them back to the sheet,
-  then triggers n8n Phase 2 with its **Sync now** button — this is the primary
-  scheduling interface, so you no longer edit the sheet by hand to schedule.
-  See [`webapp/README.md`](webapp/README.md).
+- `webapp/` — Next.js 15 scheduling interface (two tabs, sortable table /
+  mobile cards, due-date coloring, Rush/Escalated flags). Edits the six
+  human-edit columns and triggers the n8n write-back with its **Sync now**
+  button — this is the primary scheduling interface, so you no longer edit the
+  sheet by hand to schedule. Its backend is chosen by `DATA_SOURCE`: the
+  Google Sheet by default (current prod), or the promoted Postgres `cases`
+  table once the DB cutover is run
+  ([`docs/runbooks/db-cutover.md`](docs/runbooks/db-cutover.md)). See
+  [`webapp/README.md`](webapp/README.md).

@@ -12,6 +12,14 @@ Next.js 15 (App Router) + React 19 + TypeScript + Tailwind. The page fetches
 workflow writes to. Writes go back to the same sheet, cell by cell, addressed
 by `CaseNumber`.
 
+> **Backend.** By default (`DATA_SOURCE` unset) reads and writes hit the
+> Inspections sheet — current production. With `DATA_SOURCE=db` they read/write
+> the promoted Postgres `cases` table instead, and **Sync now** fires the
+> "LC360 Sync (DB)" write-back workflow; API error copy names whichever source
+> is active ("the Google Sheet" vs "the database"). The flip is a gated,
+> human-run procedure — see
+> [`../docs/runbooks/db-cutover.md`](../docs/runbooks/db-cutover.md).
+
 ## What it shows
 
 Two board tabs, splitting every case on the `Date Scheduled For` column:
@@ -134,11 +142,14 @@ or `nvm install --lts && nvm alias default lts/*`), then
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
+| `DATA_SOURCE` | for DB mode | `sheet` | `db` selects the promoted Postgres `cases` table as the read/write backend; unset/anything-else = the Google Sheet (current prod). Set on **:3010** as part of the DB cutover — see [`../docs/runbooks/db-cutover.md`](../docs/runbooks/db-cutover.md). |
+| `DATABASE_URL` | when `DATA_SOURCE=db` | — | Postgres connection string for the `cases` table. Required in DB mode; the value is the one in `infra/.env.staging`. A DB-mode read/write throws a clear error if unset. Never printed. |
 | `SHEET_ID` | yes | — | Spreadsheet id. The production Inspections sheet is `1XDgnaqlHMRFGeiBzm7fnrjM9-sZXan7rRhG2pOqVkF0`. |
 | `SHEET_TAB` | no | `Inspections` | Tab name to read/write. |
 | `GOOGLE_SA_KEY_PATH` | yes* | — | Absolute path to the service-account JSON, **outside the repo**. |
 | `N8N_WEBHOOK_URL` | for Sync now | — | POST URL of the n8n "LC360 Scheduling Sync (Phase 2)" webhook. While unset, `/api/sync` returns `503` and the UI shows a configuration error. |
 | `N8N_SYNC_SECRET` | if the webhook checks a secret | — | Sent to n8n as the `x-sync-secret` header. Staging also reads it from `infra/.env.staging` — see [rotation runbook](../docs/runbooks/lc360-credential-rotation.md) for precedence. |
+| `N8N_WEBHOOK_URL_DB` | optional, DB mode only | derived | Explicit target for the DB write-back webhook (`…/lc360-sync-db`, workflow `EYZmcYCOTejZadNY`), used when `DATA_SOURCE=db`. If unset, it is derived from `N8N_WEBHOOK_URL` by swapping the trailing `/lc360-sync` segment for `/lc360-sync-db`; if neither works `/api/sync` returns `503` (never falls back to the sheet webhook in DB mode). |
 | `GOOGLE_MAPS_API_KEY` | for Route Planner | — | Google **Geocoding** API key, used only on geo-cache misses (`/api/plan`, `npm run geo:backfill`). While unset, `/api/plan` returns `200` with `configError` and the tab shows a setup banner. |
 | `HOME_ADDRESS` | no | `4305 Glendon Place, Valrico, FL` | Start/end point of every planned day in the Route Planner. |
 
