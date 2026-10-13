@@ -1,5 +1,16 @@
 /**
- * Sheet -> Postgres seed/migrate (one-shot, idempotent, safe to re-run).
+ * ┌─────────────────────────────────────────────────────────────────────────────┐
+ * │ SEED-ONLY — run only BEFORE / DURING the sheet→DB cutover.                     │
+ * │ After prod runs with DATA_SOURCE=db, this script REVERTS DB-side human edits    │
+ * │ to (stale) sheet values: upsertCases() ON CONFLICT refreshes the six human-edit │
+ * │ columns (Schedule Y/N, Date, Time, Attempted to Contact, Comments, Sync Status) │
+ * │ and contact_at_insured from the sheet. A re-run post-cutover requires a         │
+ * │ coordinated EDIT FREEZE and is a documented rollback-RECOVERY step, NOT routine.│
+ * │ Procedure: docs/runbooks/db-cutover.md.                                        │
+ * └─────────────────────────────────────────────────────────────────────────────┘
+ *
+ * Sheet -> Postgres seed/migrate (one-shot, idempotent, safe to re-run BEFORE
+ * cutover only — see the SEED-ONLY box above).
  *
  * Reads the live Google Sheet via the existing read path (getInspections) — it
  * ONLY READS the sheet, never writes it — ensures the `cases` schema exists
@@ -31,6 +42,12 @@ async function applyMigration(): Promise<void> {
 function run(): Promise<void> {
   return (async () => {
     const started = Date.now();
+    console.warn(
+      '[migrate] SEED-ONLY: intended for BEFORE/DURING cutover. With DATA_SOURCE=db this ' +
+        'REFRESHES the six human-edit columns (and contact_at_insured) from the (possibly ' +
+        'stale) sheet and would revert post-cutover DB edits. A re-run requires a coordinated ' +
+        'edit freeze (rollback-recovery only). See docs/runbooks/db-cutover.md.'
+    );
     console.log('[migrate] DATA_SOURCE guard: this script reads the sheet READ-ONLY and writes only to Postgres.');
 
     console.log('[migrate] reading live sheet via getInspections() (read-only)...');
