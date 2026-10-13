@@ -21,6 +21,7 @@
  *    shows the setup banner.
  */
 import { parseMMDDYYYY } from '../dates';
+import { sourceLabel } from '../dataSource';
 import { GeocodeConfigError, type GeoPoint } from '../geo/geocode';
 import { planRoutes, type PlannedStop } from '../geo/planner';
 import type { Inspection } from '../types';
@@ -117,7 +118,7 @@ export function makePlanHandler(deps: PlanHandlerDeps) {
     } catch (err) {
       console.error('[api/plan] failed to load data:', err);
       return Response.json(
-        { error: 'Failed to load inspections from the Google Sheet.' },
+        { error: `Failed to load inspections from ${sourceLabel()}.` },
         { status: 502 }
       );
     }

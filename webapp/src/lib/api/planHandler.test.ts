@@ -188,12 +188,40 @@ test('plan: home geocode resolves to null (cached failure) → 200 + home-focuse
 // ---------------------------------------------------------------------------
 // Data-source failure
 
+/** Run `fn` with DATA_SOURCE pinned (undefined = unset), restoring after. */
+async function withDataSource<T>(value: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const saved = process.env.DATA_SOURCE;
+  if (value === undefined) delete process.env.DATA_SOURCE;
+  else process.env.DATA_SOURCE = value;
+  try {
+    return await fn();
+  } finally {
+    if (saved === undefined) delete process.env.DATA_SOURCE;
+    else process.env.DATA_SOURCE = saved;
+  }
+}
+
 test('plan: inspection load failure → 502 with a load error, not a plan payload', async () => {
   const d = planDeps({ rows: [], loadThrows: true });
   const res = await makePlanHandler(d.deps)(request());
   assert.equal(res.status, 502);
   const json = await res.json();
   assert.match(json.error, /Failed to load inspections/);
+});
+
+test('plan: load-failure copy names the active source (both-ways)', async () => {
+  const d = planDeps({ rows: [], loadThrows: true });
+  // Sheet mode (DATA_SOURCE unset): the exact historical wording.
+  await withDataSource(undefined, async () => {
+    const json = await (await makePlanHandler(d.deps)(request())).json();
+    assert.equal(json.error, 'Failed to load inspections from the Google Sheet.');
+  });
+  // DB mode: the sheet is not the source — must say "the database".
+  await withDataSource('db', async () => {
+    const json = await (await makePlanHandler(d.deps)(request())).json();
+    assert.equal(json.error, 'Failed to load inspections from the database.');
+    assert.ok(!json.error.includes('Google Sheet'), 'DB mode must not name the sheet');
+  });
 });
 
 // ---------------------------------------------------------------------------
