@@ -221,24 +221,31 @@ test('plan: inspectionDue parses via parseMMDDYYYY into dueWarning', async () =>
   assert.equal(byCase.NONE.dueDate, null);
 });
 
-test('plan: stops are enriched with insured name, raw due string, and flags', async () => {
+test('plan: stops are enriched with insured name, phone, raw due string, and flags', async () => {
   const d = planDeps({
     rows: [
       insp({
         caseNumber: 'A',
         locationCity: 'Tampa',
         insuredName: 'Jane Doe',
+        phone: '813-555-0100',
         inspectionDue: '11/02/2026',
         rush: 'Y',
         escalated: 'y',
       }),
+      insp({ caseNumber: 'B', locationCity: 'Tampa', insuredName: 'John Roe' }), // phone blank
     ],
   });
   const json = await (await makePlanHandler(d.deps)(request())).json();
-  const stop = json.cities[0].stops[0];
-  assert.equal(stop.insuredName, 'Jane Doe');
-  assert.equal(stop.inspectionDue, '11/02/2026');
-  assert.deepEqual(stop.flags, ['Rush', 'Escalated']);
+  const byCase = Object.fromEntries(
+    json.cities[0].stops.map((s: { caseNumber: string }) => [s.caseNumber, s])
+  );
+  assert.equal(byCase.A.insuredName, 'Jane Doe');
+  assert.equal(byCase.A.phone, '813-555-0100');
+  assert.equal(byCase.A.inspectionDue, '11/02/2026');
+  assert.deepEqual(byCase.A.flags, ['Rush', 'Escalated']);
+  assert.equal(byCase.B.insuredName, 'John Roe');
+  assert.equal(byCase.B.phone, '', 'rows without a phone enrich to empty string, never undefined');
 });
 
 // ---------------------------------------------------------------------------

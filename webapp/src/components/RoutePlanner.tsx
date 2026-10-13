@@ -57,10 +57,15 @@ function StopRow({
           {stop.address || '—'}
           {stop.city ? <span className="text-slate-500">, {stop.city}</span> : null}
         </p>
-        <p className="text-xs text-slate-500">
-          {stop.caseNumber || '—'}
-          {stop.insuredName ? ` · ${stop.insuredName}` : ''}
-        </p>
+        {(stop.caseNumber || stop.insuredName) && (
+          <p className="truncate text-sm text-slate-700" title={stop.insuredName || undefined}>
+            {stop.caseNumber ? (
+              <span className="mr-2 text-xs text-slate-500">{stop.caseNumber}</span>
+            ) : null}
+            {stop.insuredName}
+          </p>
+        )}
+        {stop.phone && <p className="truncate text-sm text-slate-500">{stop.phone}</p>}
       </div>
       {stop.flags.length > 0 && (
         <span className="flex gap-1">

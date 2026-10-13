@@ -12,9 +12,9 @@
  *  - Geocodes each scoped row's location; rows that resolve to null go to
  *    the `unresolved` bucket (never silently dropped from the response).
  *  - Runs the pure planner (lib/geo/planner) over the placed stops and
- *    enriches each planned stop with display fields (insured name, raw due
- *    date, Rush/Escalated flags) that live on the Inspection, not on the
- *    planner's PlacedStop.
+ *    enriches each planned stop with display fields (insured name, insured
+ *    phone, raw due date, Rush/Escalated flags) that live on the Inspection,
+ *    not on the planner's PlacedStop.
  *  - A GeocodeConfigError anywhere (no GOOGLE_MAPS_API_KEY and a cold cache,
  *    or Google REQUEST_DENIED) is an operator-fixable setup problem, so it
  *    answers 200 + `configError` + empty cities — never 500 — and the UI
@@ -31,6 +31,8 @@ export type PlanScope = 'unscheduled' | 'scheduled' | 'all';
 /** A planned stop plus the display fields the planner knows nothing about. */
 export interface PlannedStopView extends PlannedStop {
   insuredName: string;
+  /** Insured phone (DB-only field; "" when the row has none). */
+  phone: string;
   /** Raw "MM/DD/YYYY" (or "") for display; dueWarning is the flag. */
   inspectionDue: string;
   /** "Rush" / "Escalated" labels, per components/flags.ts. */
@@ -203,6 +205,7 @@ export function makePlanHandler(deps: PlanHandlerDeps) {
           return {
             ...stop,
             insuredName: row?.insuredName ?? '',
+            phone: row?.phone ?? '',
             inspectionDue: row?.inspectionDue ?? '',
             flags: row ? rowFlags(row) : [],
           };
