@@ -20,7 +20,10 @@ database is created:
   (see §Cleanup).
 - The running `cma-lc360-ingest-staging.timer` (every 2 h → `run-ingest-lc360.sh` →
   `lc360:ingest`) keeps running and now feeds **production**: it refreshes the LC360-owned
-  columns and the `caseid` GUID on every run. **Do not stop this timer.**
+  columns and the `caseid` GUID on every run. **Do not stop this timer.** ⚠ The unit file
+  currently sets `LC360_INGEST_PRUNE=1`, which makes every timer run **mass-delete** seeded
+  sheet-only rows; the drop-in in **§1.0** pins `LC360_INGEST_PRUNE=0` (timer stays on,
+  delete side off) and must be applied before any seeding.
 - The webapp PATCHes Postgres directly and, on **Sync now**, fires n8n's
   **"LC360 Sync (DB)"** workflow (`EYZmcYCOTejZadNY`, webhook `…/lc360-sync-db`) which
   reads `Ready to Sync` rows from `cases` and writes `Synced`/`last_synced` back to the DB.
@@ -47,16 +50,18 @@ and DB-mode errors read "the database" rather than "the Google Sheet". See §Pre
 
 ---
 
-## 0. Preflight (all read-only — no writes)
+## 0. Preflight (no production-affecting writes; exceptions noted in P1/P2 and §1.0)
 
 Set up a shell that can reach the DB **without printing the URL**. From the repo root:
 
 ```bash
 cd /opt/workspace/projects/cma-scheduling-claude/webapp
-# Load DATABASE_URL etc. for the psql/curl commands below WITHOUT echoing values.
+# Load POSTGRES_USER/POSTGRES_DB (and DATABASE_URL, unused by the helper) for the
+# commands below WITHOUT echoing values.
 set +x; set -a; . ../infra/.env.staging; set +a
-# Convenience alias for read-only SQL (never echoes the connection string):
-sql() { psql "$DATABASE_URL" -X -q -Atc "$1"; }
+# Convenience helper for read-only SQL. This host has NO psql binary — run psql
+# INSIDE the promoted Postgres container (never echoes any credential):
+sql() { docker exec cma-scheduling-staging-pg psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -X -q -Atc "$1"; }
 ```
 
 ### P0. Workflow-export guard is in place + live n8n state
@@ -74,6 +79,9 @@ Confirm active flags via the n8n API (key referenced by name, never printed):
 
 ```bash
 export $(grep -E '^N8N_API_KEY=' ../n8n-workflow/.env)   # loads, does not echo the value
+# Caveat: `export $(grep …)` word-splits, so it breaks on values containing spaces or `$`.
+# Fine for the current API key (alphanumeric); a value needing it would have to be quoted
+# (or sourced from the .env) instead.
 api() { curl -s -H "X-N8N-API-KEY: $N8N_API_KEY" "http://192.168.1.74:5678/api/v1$1"; }
 for id in EYZmcYCOTejZadNY cG2WVIbQkPAfBvWW BNHnE6trqQk079eo; do
   printf '%s  ' "$id"; api "/workflows/$id" | jq -r '[.name, .active] | @tsv'
@@ -99,9 +107,13 @@ If the column count is < 3, run the ingest once (it applies all three migrations
 ### P2. DB ↔ sheet parity, and every ready row has a GUID
 
 `migrate:sheet-to-db` is idempotent and, at the end, prints
-`SELECT count(*) FROM cases` vs the sheet's unique case count. Run it now (still pre-cutover)
-and confirm it logs `OK: DB row count matches the sheet` (a `WARNING: count mismatch` means
-resolve that **before** cutting over):
+`SELECT count(*) FROM cases` vs the sheet's unique case count. This parity check is only
+achievable with the ingest **mirror-prune disabled** (§1.0): with `LC360_INGEST_PRUNE=1` the
+2-hour timer deletes the seeded sheet-only rows between the seed and the count, guaranteeing
+a false mismatch. If preflight spans a timer window, apply the §1.0 drop-in now and verify
+PRUNE=0 before seeding. Then run the seed (still pre-cutover) and confirm it logs
+`OK: DB row count matches the sheet` (a `WARNING: count mismatch` — with prune confirmed off —
+means resolve that **before** cutting over; a re-run of the seed is safe and idempotent):
 
 ```bash
 npm run migrate:sheet-to-db
@@ -132,6 +144,41 @@ promoted DB. (Staging `:3011` reads `DATA_SOURCE=db` + `DATABASE_URL` from the s
 
 ## 1. Cutover sequence (do these in order)
 
+### 1.0 Disable the ingest mirror-prune — FIRST, before any migrate/ingest
+
+The ingest supports an opt-in **mirror prune**: `cma-lc360-ingest-staging.service:22` sets
+`LC360_INGEST_PRUNE=1`, and `webapp/scripts/ingest-lc360-to-db.ts` (prune block, ~lines
+138–145) then **deletes every `cases` row whose `case_number` is absent from the LC360 active
+pull — origin-blind**. The `migrate:sheet-to-db` seeds are sheet-only rows LC360 has never
+seen (live facts: DB=49 / sheet=97 ⇒ ~48 sheet-only rows), so the next timer fire — within
+2 h of any seed — would mass-delete them, including the edits the final `migrate` just
+copied. Disable the delete side **before seeding**, keeping the timer itself running:
+
+```bash
+# Idempotent systemd drop-in (re-running rewrites identical content; the unit file is
+# never edited). Drop-ins load AFTER the unit, so the later assignment wins.
+mkdir -p ~/.config/systemd/user/cma-lc360-ingest-staging.service.d
+printf '%s\n' '[Service]' 'Environment=LC360_INGEST_PRUNE=0' \
+  > ~/.config/systemd/user/cma-lc360-ingest-staging.service.d/override.conf
+systemctl --user daemon-reload
+systemctl --user restart cma-lc360-ingest-staging.service
+```
+
+(Interactive equivalent: `systemctl --user edit cma-lc360-ingest-staging.service`, adding
+`[Service]` + `Environment=LC360_INGEST_PRUNE=0`.)
+
+**Verify the running service actually has PRUNE=0:**
+
+```bash
+systemctl --user show cma-lc360-ingest-staging.service -p Environment \
+  | tr ' ' '\n' | grep '^LC360_INGEST_PRUNE='   # expected: LC360_INGEST_PRUNE=0
+```
+
+If you applied this during preflight (recommended if preflight spans a timer window), just
+re-run the block here — it is idempotent. What to do with closed/deleted-in-LC360 rows
+(prune them vs. a protected flag or LC360 mapping for sheet-only rows) is a **retention
+policy decision scheduled after cutover** (see §Cleanup) — not tonight's problem.
+
 ### 1.1 Edit freeze
 Announce/confirm **no edits** to the sheet or the webapp for the window. This freezes the
 sheet's human-edit columns at their authoritative values; the last seed below copies them.
@@ -146,10 +193,12 @@ npm run lc360:ingest
 npm run migrate:sheet-to-db
 ```
 
-Both are idempotent and never clobber each other: `lc360:ingest` never writes the six
-human-edit columns or `caseid`… (it owns `caseid`, not the edit cols); `migrate:sheet-to-db`
-never writes `caseid`/`last_synced`. Order (a)→(b) guarantees GUIDs present and edit columns
-reflect the frozen sheet. The final `migrate` must print `OK: DB row count matches the sheet`.
+Both are idempotent and never clobber each other: `lc360:ingest` owns the `caseid` GUID and
+refreshes it on every insert **and** conflict (`src/lib/lc360/repository.ts`), but it never
+writes the six human-edit columns; `migrate:sheet-to-db` never writes `caseid`/`last_synced`.
+Order (a)→(b) guarantees GUIDs present and edit columns reflect the frozen sheet. With prune
+disabled at §1.0, the seeded sheet-only rows survive the ingest runs, so the final `migrate`
+must print `OK: DB row count matches the sheet`.
 
 ### 1.3 Point prod (:3010) at the DB
 Edit **`webapp/.env.local`** (git-ignored; autoloaded by Next when the prod unit runs
@@ -179,6 +228,9 @@ journalctl --user -u cma-scheduling-webapp -n 30 --no-pager   # no DATABASE_URL 
 
 ### 1.5 Activate the DB write-back workflow; change nothing in the pull path
 ```bash
+# Re-load the API key (a shell opened later in the sequence would not have the §P0 export;
+# without this the activate call below fires a 401 mid-cutover). Loads, does not echo.
+export $(grep -E '^N8N_API_KEY=' ../n8n-workflow/.env)   # caveat: see §P0 note on spaces/$
 # Activate LC360 Sync (DB):
 curl -s -X POST -H "X-N8N-API-KEY: $N8N_API_KEY" \
   "http://192.168.1.74:5678/api/v1/workflows/EYZmcYCOTejZadNY/activate" | jq '.active'   # true
@@ -210,7 +262,7 @@ Pick a real case number you are willing to schedule; substitute `<CASE>`.
 2. **Confirm DB-mode serving + source-neutral error copy**
    ```bash
    curl -s http://localhost:3010/api/inspections | jq 'length'   # array, no "Google Sheet" error
-   curl -s http://localhost:3010/api/inspections | jq -e '.[0].phone // "" != ""' >/dev/null \
+   curl -s http://localhost:3010/api/inspections | jq -e '(.[0].phone // "") != ""' >/dev/null \
      && echo 'phone populated (DB-only field)' || echo 'phone blank — ingest may not have run'
    ```
 3. **Fire sync → n8n DB workflow**
@@ -246,7 +298,7 @@ six human-edit columns).
    ```bash
    sql "SELECT case_number, sync_status, \"date\", \"time\", attempted_to_contact,
               comments, schedule_appointment_yn
-        FROM cases WHERE sync_status <> '' ORDER BY case_number;"
+         FROM cases ORDER BY case_number;"   # all rows: a blank sync_status can still carry edits
    ```
 4. (Optional) bring staging back to keep validating:
    `systemctl --user start cma-scheduling-webapp-staging.service`.
@@ -270,12 +322,19 @@ Do these **after** confirming DB mode is stable and the warm-rollback window has
   after** the 2-week window — until then it is the rollback copy.
 - **Delete the retired staging webapp unit** `cma-scheduling-webapp-staging.service` (and
   `run-webapp-3011.sh`) once no longer needed.
+- **Mirror-prune stays OFF (`LC360_INGEST_PRUNE=0`, §1.0 drop-in) until the retention-policy
+  decision is made**: closed-case / deleted-in-LC360 rows are kept indefinitely by upsert-only
+  ingest for now. Decide prune-when-gone vs. a protected flag (or an LC360 mapping for
+  sheet-only rows) as its own task; only then remove the override
+  (`rm -rf ~/.config/systemd/user/cma-lc360-ingest-staging.service.d` + `daemon-reload` +
+  `restart`) in a controlled window, with a fresh backup first.
 - Optionally add a `statement_timeout` / `connectionTimeoutMillis` to `lib/db/pool.ts` (now
   that a DB stall would hang prod requests) — a separate, low-priority hardening task.
 
 ## Appendix — commands referenced by this runbook
 - Sheet→DB seed: `npm run migrate:sheet-to-db` (**SEED-ONLY** — see the warning header in
   `webapp/scripts/migrate-sheet-to-db.ts`; re-running after cutover needs an edit freeze).
-- LC360 ingest: `npm run lc360:ingest` (owns `caseid` + LC360 columns; runs on the timer).
+- LC360 ingest: `npm run lc360:ingest` (owns `caseid` + LC360 columns; runs on the timer;
+  mirror-prune pinned OFF by the §1.0 drop-in pending the retention-policy decision).
 - Credential rotation (unrelated, but same DB/secret hygiene rules):
   [`lc360-credential-rotation.md`](./lc360-credential-rotation.md).
